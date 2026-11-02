@@ -103,8 +103,8 @@ final class CompareService {
             let stream = try await engine.generate(with: model, request: request)
             for try await event in stream {
                 switch event {
-                case .started(let opens):
-                    self[keyPath: side].opensInReasoning = opens
+                case .started(let prompt):
+                    self[keyPath: side].opensInReasoning = prompt.opensInReasoning
                 case .promptProgress(let progress):
                     self[keyPath: side].promptProgress = progress
                 case .text(let text):

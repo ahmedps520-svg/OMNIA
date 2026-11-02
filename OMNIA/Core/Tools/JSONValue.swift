@@ -56,12 +56,12 @@ enum JSONValue: Hashable, Sendable {
     /// The value rendered as a chat-template variable, with object keys kept in order.
     var jinjaValue: Value {
         switch self {
-        case .null: .null
-        case .bool(let flag): .boolean(flag)
-        case .int(let value): .int(value)
-        case .double(let value): .double(value)
-        case .string(let text): .string(text)
-        case .array(let items): .array(items.map(\.jinjaValue))
+        case .null: return .null
+        case .bool(let flag): return .boolean(flag)
+        case .int(let value): return .int(value)
+        case .double(let value): return .double(value)
+        case .string(let text): return .string(text)
+        case .array(let items): return .array(items.map(\.jinjaValue))
         case .object(let members):
             var storage = OrderedDictionary<ObjectKey, Value>(minimumCapacity: members.count)
             for (key, value) in members { storage[.string(key)] = value.jinjaValue }

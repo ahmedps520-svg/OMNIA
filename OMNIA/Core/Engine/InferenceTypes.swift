@@ -14,6 +14,9 @@ struct ChatTurn: Hashable, Sendable {
     /// For `.tool` turns: the call this result answers, and the tool's name.
     var toolCallID: String?
     var toolName: String?
+
+    /// A tool call or a tool's result, which templates without tool support can't show natively.
+    var carriesTools: Bool { role == .tool || !toolCalls.isEmpty }
 }
 
 enum KVCacheType: String, Codable, Sendable, CaseIterable, Identifiable {
@@ -85,6 +88,35 @@ struct GenerationRequest: Sendable {
     var reusePromptCache: Bool = true
     /// Extra delay between tokens; set by the thermal policy on the efficiency profile.
     var pacing: Duration = .zero
+    /// Functions the model may call in this reply.
+    var tools: [ToolDefinition] = []
+    /// Constrains the reply's text, e.g. to valid JSON.
+    var responseFormat: ResponseFormat = .text
+    /// Text that ends the reply when the model writes it. It isn't included in the reply.
+    var stopSequences: [String] = []
+    /// The conversation whose saved model memory may be restored and updated (set by the chat).
+    var memoryKey: UUID?
+    /// Where that memory lives for the loaded model and settings (filled in by the engine).
+    var memory: ConversationMemoryRequest?
+}
+
+/// The shape of a reply.
+enum ResponseFormat: Hashable, Sendable {
+    case text
+    /// A JSON object, enforced token by token with llama.cpp's JSON grammar.
+    case json
+    /// Any GBNF grammar whose start rule is `root`.
+    case grammar(String)
+}
+
+/// What the runtime decided while preparing a prompt.
+struct PromptInfo: Equatable, Sendable {
+    /// The template already opened a thinking block, so the first generated text is reasoning.
+    var opensInReasoning: Bool
+    /// How the model writes tool calls in this reply; nil when no tools were offered.
+    var toolCallFormat: ToolCallFormat?
+    /// Tokens restored from saved conversation memory for this prompt.
+    var restoredTokens: Int = 0
 }
 
 enum StopReason: String, Codable, Sendable {
@@ -125,6 +157,8 @@ struct GenerationStats: Codable, Hashable, Sendable {
     var modelName: String
     /// Oldest turns dropped so the prompt fit the context window.
     var trimmedTurns: Int?
+    /// Tokens restored from the conversation's saved memory instead of being re-read.
+    var restoredPromptTokens: Int?
 
     var contextUtilization: Double {
         contextSize > 0 ? Double(contextUsed) / Double(contextSize) : 0
@@ -132,9 +166,8 @@ struct GenerationStats: Codable, Hashable, Sendable {
 }
 
 enum GenerationEvent: Sendable {
-    /// The prompt was formatted. `opensInReasoning` is true when the template already opened a
-    /// thinking block, so the first generated text is reasoning rather than the answer.
-    case started(opensInReasoning: Bool)
+    /// The prompt was formatted (see `PromptInfo`).
+    case started(PromptInfo)
     /// Fraction of the prompt evaluated so far (0…1). Only emitted for long prompts.
     case promptProgress(Double)
     /// Newly decoded text (always valid UTF-8).
@@ -186,6 +219,7 @@ enum InferenceError: LocalizedError {
     case noModelSelected
     case modelNotInstalled
     case thermalLimit
+    case grammarFailed
 
     var errorDescription: String? {
         switch self {
@@ -218,6 +252,8 @@ enum InferenceError: LocalizedError {
             "This model isn't downloaded yet."
         case .thermalLimit:
             "Generation stopped to let the device cool down."
+        case .grammarFailed:
+            "The response format couldn't be applied to this model."
         }
     }
 }

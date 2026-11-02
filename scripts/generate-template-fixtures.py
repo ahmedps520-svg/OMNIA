@@ -152,7 +152,7 @@ def main(headers_dir, output):
         lines.append("    )")
     lines.append("}")
     lines.append("")
-    Path(output).write_text("\n".join(lines), encoding="utf-8")
+    Path(output).write_text("\n".join(lines), encoding="utf-8", newline="\n")
     print(f"Wrote {len(templates)} fixtures to {output}")
 
 

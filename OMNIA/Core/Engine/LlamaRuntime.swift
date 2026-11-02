@@ -29,6 +29,11 @@ final class LlamaRuntime: @unchecked Sendable {
     private let templateRenderer: ChatTemplateRenderer?
     private let bosText: String
     private let addsBOS: Bool
+    /// How the template expects tool calls; nil means OMNIA's text protocol (`ToolPrompt`).
+    private let nativeToolFormat: ToolCallFormat?
+    /// Recurrent and hybrid caches can't be trimmed back to a shared prefix, so a saved state
+    /// would rarely be reusable; only attention-only models save conversation memory.
+    private let canSaveState: Bool
 
     private let interruptState = OSAllocatedUnfairLock<InterruptReason?>(initialState: nil)
     private let pacingNanoseconds = OSAllocatedUnfairLock<UInt64>(initialState: 0)
@@ -183,6 +188,8 @@ final class LlamaRuntime: @unchecked Sendable {
         templateRenderer = renderer
         bosText = bos
         addsBOS = llama_vocab_get_add_bos(loadedVocab)
+        nativeToolFormat = renderer == nil ? nil : ToolCallFormat.detect(template: template)
+        canSaveState = !llama_model_is_recurrent(loadedModel) && !llama_model_is_hybrid(loadedModel)
         info = LoadedModelInfo(
             modelID: modelID,
             displayName: displayName,
@@ -333,10 +340,12 @@ final class LlamaRuntime: @unchecked Sendable {
 
     /// Formats the conversation with, in order of preference: the model's own Jinja template,
     /// llama.cpp's built-in template for its family, then ChatML.
-    private func format(_ turns: [ChatTurn], addAssistant: Bool, variables: [String: TemplateValue]) -> String {
+    private func format(_ turns: [ChatTurn], addAssistant: Bool, variables: [String: TemplateValue],
+                        tools: [ToolDefinition]) -> String {
         if let templateRenderer {
             do {
-                var rendered = try templateRenderer.render(turns, addGenerationPrompt: addAssistant, variables: variables)
+                var rendered = try templateRenderer.render(turns, addGenerationPrompt: addAssistant,
+                                                           variables: variables, tools: tools)
                 // Templates often begin with the BOS text; the tokenizer adds BOS itself.
                 if addsBOS, !bosText.isEmpty, rendered.hasPrefix(bosText) {
                     rendered.removeFirst(bosText.count)
@@ -346,7 +355,20 @@ final class LlamaRuntime: @unchecked Sendable {
                 llamaLog.warning("Chat template failed to render: \(error.localizedDescription, privacy: .public)")
             }
         }
-        return formatWithBuiltInTemplate(turns, addAssistant: addAssistant)
+        // Built-in templates know nothing of tools: describe them in text.
+        let plain = turns.contains(where: \.carriesTools) || !tools.isEmpty ? ToolPrompt.flatten(turns, tools: tools) : turns
+        return formatWithBuiltInTemplate(plain, addAssistant: addAssistant)
+    }
+
+    /// The turns and tools to render. Templates without native tool support get tool turns as text.
+    private func promptParts(for request: GenerationRequest)
+        -> (turns: [ChatTurn], tools: [ToolDefinition], format: ToolCallFormat?, native: Bool) {
+        let offersTools = !request.tools.isEmpty
+        guard offersTools || request.turns.contains(where: \.carriesTools) else { return (request.turns, [], nil, false) }
+        if let nativeToolFormat {
+            return (request.turns, request.tools, offersTools ? nativeToolFormat : nil, true)
+        }
+        return (ToolPrompt.flatten(request.turns, tools: request.tools), [], offersTools ? .hermesJSON : nil, false)
     }
 
     private func formatWithBuiltInTemplate(_ turns: [ChatTurn], addAssistant: Bool) -> String {
@@ -371,33 +393,42 @@ final class LlamaRuntime: @unchecked Sendable {
         return String(decoding: buffer.prefix(Int(length)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
     }
 
-    /// Formats and tokenizes the conversation, dropping the oldest turns when it would not
+    /// A formatted, tokenized prompt.
+    private struct Prompt {
+        var tokens: [llama_token]
+        var trimmedTurns: Int
+        var opensInReasoning: Bool
+        var toolFormat: ToolCallFormat?
+        var nativeTools: Bool
+    }
+
+    /// Formats and tokenizes the conversation, dropping the oldest exchanges when it would not
     /// leave room for the reply inside the context window.
-    private func promptTokens(for request: GenerationRequest, contextLimit: Int) throws
-        -> (tokens: [llama_token], trimmedTurns: Int, opensInReasoning: Bool) {
+    private func prompt(for request: GenerationRequest, contextLimit: Int) throws -> Prompt {
         let reserve = min(max(request.maxTokens, 256), contextLimit / 2)
-        var turns = request.turns
+        let parts = promptParts(for: request)
+        var turns = parts.turns
         var trimmed = 0
         while true {
-            var prompt = format(turns, addAssistant: true, variables: request.templateVariables)
+            var text = format(turns, addAssistant: true, variables: request.templateVariables, tools: parts.tools)
             // Thinking templates may open the reasoning block themselves ("…assistant\n<think>\n").
-            let opensInReasoning = prompt.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("<think>")
-            if let prefix = request.assistantPrefix, !prefix.isEmpty { prompt += prefix }
-            let tokens = try tokenize(prompt, addSpecial: true, parseSpecial: true)
-            if tokens.count + reserve <= contextLimit { return (tokens, trimmed, opensInReasoning) }
+            let opensInReasoning = text.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("<think>")
+            if let prefix = request.assistantPrefix, !prefix.isEmpty { text += prefix }
+            let tokens = try tokenize(text, addSpecial: true, parseSpecial: true)
+            let result = Prompt(tokens: tokens, trimmedTurns: trimmed, opensInReasoning: opensInReasoning,
+                                toolFormat: parts.format, nativeTools: parts.native)
+            if tokens.count + reserve <= contextLimit { return result }
 
-            let removable = turns.indices.filter { turns[$0].role != .system }
-            guard removable.count > 1, let first = removable.first else {
-                if tokens.count + 64 <= contextLimit { return (tokens, trimmed, opensInReasoning) }
+            // Drop the oldest exchange: everything from the first non-system turn up to the second
+            // user turn. Tool calls stay with their results and roles keep alternating.
+            let userTurns = turns.indices.filter { turns[$0].role == .user }
+            guard userTurns.count > 1, let start = turns.indices.first(where: { turns[$0].role != .system }) else {
+                if tokens.count + 64 <= contextLimit { return result }
                 throw InferenceError.promptTooLong(tokens: tokens.count, context: contextLimit)
             }
-            turns.remove(at: first)
-            trimmed += 1
-            // Keep user/assistant alternation intact for strict templates.
-            if first < turns.count, turns[first].role == .assistant, turns.count - first > 1 {
-                turns.remove(at: first)
-                trimmed += 1
-            }
+            let end = userTurns[1]
+            trimmed += end - start
+            turns.removeSubrange(start..<end)
         }
     }
 
@@ -411,30 +442,47 @@ final class LlamaRuntime: @unchecked Sendable {
                 if case .cancelled = termination { self?.interrupt(.user) }
             }
             queue.async {
+                var completed = false
                 do {
-                    try self.runGeneration(request, continuation: continuation)
+                    completed = try self.runGeneration(request, continuation: continuation)
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
                 }
+                // After the stream ends, so the reply is already shown while the state is written.
+                // Work queued later (including close) waits for this on the serial queue.
+                if completed { self.saveStateIfNeeded(request.memory) }
             }
         }
     }
 
+    /// Returns whether the reply finished normally, so its cache state is worth saving.
     private func runGeneration(_ request: GenerationRequest,
-                               continuation: AsyncThrowingStream<GenerationEvent, Error>.Continuation) throws {
+                               continuation: AsyncThrowingStream<GenerationEvent, Error>.Continuation) throws -> Bool {
         guard !isClosed else { throw InferenceError.loadFailed("The model was unloaded.") }
         if let reason = currentInterrupt {
             if reason == .background { throw InferenceError.backgroundExecution }
             continuation.yield(.finished(emptyStats(stop: .cancelled)))
-            return
+            return false
         }
 
         let started = ContinuousClock.now
         let contextLimit = Int(llama_n_ctx(context))
-        let (prompt, trimmedTurns, opensInReasoning) = try promptTokens(for: request, contextLimit: contextLimit)
+        let formatted = try self.prompt(for: request, contextLimit: contextLimit)
+        let prompt = formatted.tokens
         guard !prompt.isEmpty else { throw InferenceError.tokenizationFailed }
-        continuation.yield(.started(opensInReasoning: opensInReasoning && (request.assistantPrefix ?? "").isEmpty))
+
+        // Returning to a conversation whose memory was saved: restore it instead of re-reading.
+        var restored = 0
+        if let saved = request.memory, canSaveState, request.reusePromptCache,
+           commonPrefixLength(cachedTokens, prompt) < min(prompt.count / 2, 512),
+           FileManager.default.fileExists(atPath: saved.fileURL.path(percentEncoded: false)) {
+            restored = restoreState(from: saved.fileURL, capacity: contextLimit)
+        }
+        let opensInReasoning = formatted.opensInReasoning && (request.assistantPrefix ?? "").isEmpty
+        continuation.yield(.started(PromptInfo(opensInReasoning: opensInReasoning,
+                                               toolCallFormat: formatted.toolFormat,
+                                               restoredTokens: restored)))
 
         // Reuse the longest common prefix still held in the KV cache.
         let memory = llama_get_memory(context)
@@ -464,7 +512,7 @@ final class LlamaRuntime: @unchecked Sendable {
                 clearMemory()
                 if reason == .background { throw InferenceError.backgroundExecution }
                 continuation.yield(.finished(emptyStats(stop: reason == .user ? .cancelled : .interrupted)))
-                return
+                return false
             }
             let end = min(evaluated + batchCapacity, pending.count)
             batch.n_tokens = 0
@@ -488,9 +536,14 @@ final class LlamaRuntime: @unchecked Sendable {
         let promptFinished = ContinuousClock.now
 
         // Sample.
-        guard let sampler = makeSampler(request.sampling) else { throw InferenceError.loadFailed("Sampler unavailable.") }
+        let constraint = grammar(for: request.responseFormat, opensInReasoning: formatted.opensInReasoning)
+        guard let sampler = makeSampler(request.sampling, grammar: constraint) else {
+            throw constraint == nil ? InferenceError.loadFailed("Sampler unavailable.") : InferenceError.grammarFailed
+        }
         defer { llama_sampler_free(sampler) }
         var decoder = UTF8StreamDecoder()
+        var stopMatcher = StopSequenceMatcher(stopSequences(for: request, prompt: formatted))
+        var stoppedBySequence = false
         var generated = 0
         var firstTokenAt: ContinuousClock.Instant?
         var stop = StopReason.maxTokens
@@ -507,8 +560,16 @@ final class LlamaRuntime: @unchecked Sendable {
                 break
             }
             let text = decoder.append(piece(for: token))
-            if !text.isEmpty { continuation.yield(.text(text)) }
             generated += 1
+            if !text.isEmpty {
+                let output = stopMatcher.feed(text)
+                if !output.text.isEmpty { continuation.yield(.text(output.text)) }
+                if output.stopped {
+                    stoppedBySequence = true
+                    stop = .endOfSequence
+                    break
+                }
+            }
 
             if position >= contextLimit {
                 stop = .contextFull
@@ -532,8 +593,17 @@ final class LlamaRuntime: @unchecked Sendable {
             if pause > 0 { Thread.sleep(forTimeInterval: Double(pause) / 1_000_000_000) }
         }
 
-        let tail = decoder.flush()
-        if !tail.isEmpty { continuation.yield(.text(tail)) }
+        if !stoppedBySequence {
+            var remaining = ""
+            let tail = decoder.flush()
+            if !tail.isEmpty {
+                let output = stopMatcher.feed(tail)
+                remaining = output.text
+                stoppedBySequence = output.stopped
+            }
+            if !stoppedBySequence { remaining += stopMatcher.flush() }
+            if !remaining.isEmpty { continuation.yield(.text(remaining)) }
+        }
 
         let finished = ContinuousClock.now
         let promptSeconds = max((promptFinished - started).seconds, 1e-6)
@@ -554,8 +624,115 @@ final class LlamaRuntime: @unchecked Sendable {
             modelID: info.modelID,
             modelName: info.displayName
         )
-        stats.trimmedTurns = trimmedTurns > 0 ? trimmedTurns : nil
+        stats.trimmedTurns = formatted.trimmedTurns > 0 ? formatted.trimmedTurns : nil
+        stats.restoredPromptTokens = restored > 0 ? restored : nil
         continuation.yield(.finished(stats))
+        // Interrupted replies (background, memory pressure, heat, unload) leave nothing worth saving.
+        return stop != .interrupted && stop != .failed
+    }
+
+    // MARK: Stop sequences and grammars
+
+    /// The request's own stop sequences, plus the tool's reply marker for the model's tool format
+    /// (generation must stop where the tool, not the model, takes over).
+    private func stopSequences(for request: GenerationRequest, prompt: Prompt) -> [String] {
+        guard let format = prompt.toolFormat else { return request.stopSequences }
+        return request.stopSequences + (prompt.nativeTools ? format.stopSequences : ["</tool_call>"])
+    }
+
+    /// GBNF for the requested format, and for reasoning models the pattern after which it applies
+    /// (the reasoning itself stays free text).
+    private func grammar(for format: ResponseFormat, opensInReasoning: Bool) -> (text: String, trigger: String?)? {
+        let text: String
+        switch format {
+        case .text: return nil
+        case .json: text = Self.jsonGrammar
+        case .grammar(let custom): text = custom
+        }
+        let template = info.chatTemplate ?? ""
+        if template.contains("<|channel|>") && template.contains("<|message|>") {
+            return (text, #"[\s\S]*?<\|channel\|>final<\|message\|>([\s\S]*)"#)
+        }
+        if template.contains("to=user") && template.contains("<|message|>") {
+            return (text, #"[\s\S]*?to=user<\|message\|>([\s\S]*)"#)
+        }
+        if opensInReasoning {
+            return (text, #"[\s\S]*?</think>\s*([\s\S]*)"#)
+        }
+        return (text, nil)
+    }
+
+    /// llama.cpp's `grammars/json.gbnf` (b11960), verbatim: a JSON object.
+    static let jsonGrammar = #"""
+    root   ::= object
+    value  ::= object | array | string | number | ("true" | "false" | "null") ws
+
+    object ::=
+      "{" ws (
+                string ":" ws value
+        ("," ws string ":" ws value)*
+      )? "}" ws
+
+    array  ::=
+      "[" ws (
+                value
+        ("," ws value)*
+      )? "]" ws
+
+    string ::=
+      "\"" (
+        [^"\\\x7F\x00-\x1F] |
+        "\\" (["\\bfnrt] | "u" [0-9a-fA-F]{4}) # escapes
+      )* "\"" ws
+
+    number ::= ("-"? ([0-9] | [1-9] [0-9]{0,15})) ("." [0-9]+)? ([eE] [-+]? [0-9] [1-9]{0,15})? ws
+
+    # Optional space: by convention, applied in this grammar after literal chars when allowed
+    ws ::= | " " | "\n" [ \t]{0,20}
+    """#
+
+    // MARK: Saved conversation memory
+
+    private func commonPrefixLength(_ a: [llama_token], _ b: [llama_token]) -> Int {
+        zip(a, b).prefix { $0 == $1 }.count
+    }
+
+    /// Loads a saved sequence state into the cache. Returns the number of tokens restored, or 0
+    /// (with the cache cleared and the unusable file removed) if it can't be used.
+    private func restoreState(from url: URL, capacity: Int) -> Int {
+        clearMemory()
+        var tokens = [llama_token](repeating: 0, count: capacity)
+        let tokenCapacity = tokens.count
+        var count = 0
+        let read = llama_state_seq_load_file(context, url.path(percentEncoded: false), 0, &tokens, tokenCapacity, &count)
+        guard read > 0, count > 0, count <= capacity else {
+            clearMemory()
+            try? FileManager.default.removeItem(at: url)
+            llamaLog.warning("Discarded a saved conversation state that couldn't be restored")
+            return 0
+        }
+        cachedTokens = Array(tokens.prefix(count))
+        return count
+    }
+
+    /// Writes the cached conversation state, when it's long enough to be worth it. Written to a
+    /// temporary file first so an interrupted save never leaves a damaged state behind.
+    private func saveStateIfNeeded(_ request: ConversationMemoryRequest?) {
+        guard let request, canSaveState, !isClosed, cachedTokens.count >= request.minimumTokens else { return }
+        let size = llama_state_seq_get_size(context, 0)
+        guard size > 0, Int64(size) <= request.maximumBytes else { return }
+        let path = request.fileURL.path(percentEncoded: false)
+        let partial = path + ".partial"
+        let written = cachedTokens.withUnsafeBufferPointer { tokens in
+            llama_state_seq_save_file(context, partial, 0, tokens.baseAddress, tokens.count)
+        }
+        let files = FileManager.default
+        if written > 0 {
+            try? files.removeItem(atPath: path)
+            try? files.moveItem(atPath: partial, toPath: path)
+        } else {
+            try? files.removeItem(atPath: partial)
+        }
     }
 
     private func emptyStats(stop: StopReason) -> GenerationStats {
@@ -565,8 +742,17 @@ final class LlamaRuntime: @unchecked Sendable {
                         stopReason: stop, modelID: info.modelID, modelName: info.displayName)
     }
 
-    private func makeSampler(_ parameters: SamplingParameters) -> UnsafeMutablePointer<llama_sampler>? {
+    /// The sampler chain. A grammar comes first, so later samplers only see tokens it allows.
+    private func makeSampler(_ parameters: SamplingParameters,
+                             grammar: (text: String, trigger: String?)?) -> UnsafeMutablePointer<llama_sampler>? {
         guard let chain = llama_sampler_chain_init(llama_sampler_chain_default_params()) else { return nil }
+        if let grammar {
+            guard let constraint = makeGrammarSampler(grammar.text, trigger: grammar.trigger) else {
+                llama_sampler_free(chain)
+                return nil
+            }
+            llama_sampler_chain_add(chain, constraint)
+        }
         if parameters.temperature <= 0 {
             if parameters.repetitionPenalty > 1.0001 {
                 llama_sampler_chain_add(chain, llama_sampler_init_top_k(40))
@@ -591,6 +777,16 @@ final class LlamaRuntime: @unchecked Sendable {
         llama_sampler_chain_add(chain, llama_sampler_init_temp(Float(parameters.temperature)))
         llama_sampler_chain_add(chain, llama_sampler_init_dist(parameters.seed ?? LLAMA_DEFAULT_SEED))
         return chain
+    }
+
+    /// A GBNF grammar sampler; with a trigger pattern it only applies to the text after the
+    /// pattern's first capture group begins (llama.cpp's lazy grammars).
+    private func makeGrammarSampler(_ grammar: String, trigger: String?) -> UnsafeMutablePointer<llama_sampler>? {
+        guard let trigger else { return llama_sampler_init_grammar(vocab, grammar, "root") }
+        return trigger.withCString { pattern in
+            var patterns: [UnsafePointer<CChar>?] = [pattern]
+            return llama_sampler_init_grammar_lazy_patterns(vocab, grammar, "root", &patterns, 1, nil, 0)
+        }
     }
 
     private static func add(_ batch: inout llama_batch, token: llama_token, position: Int, logits: Bool) {

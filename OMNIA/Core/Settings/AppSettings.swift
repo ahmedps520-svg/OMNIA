@@ -181,6 +181,10 @@ final class AppSettings {
     var kvCache: KVCacheChoice { didSet { save(kvCache.rawValue, "kvCache") } }
     var flashAttention: Bool { didSet { save(flashAttention, "flashAttention") } }
     var reusePromptCache: Bool { didSet { save(reusePromptCache, "reusePromptCache") } }
+    /// Save each long conversation's model memory so reopening it continues instantly.
+    var rememberLongChats: Bool { didSet { save(rememberLongChats, "rememberLongChats") } }
+    /// Storage allowed for saved conversation memory, in gigabytes.
+    var conversationMemoryLimitGB: Double { didSet { save(conversationMemoryLimitGB, "conversationMemoryLimitGB") } }
 
     // Memory & performance
     var memorySafety: MemorySafety { didSet { save(memorySafety.rawValue, "memorySafety") } }
@@ -220,6 +224,8 @@ final class AppSettings {
         kvCache = KVCacheChoice(rawValue: defaults.string(forKey: "kvCache") ?? "") ?? .automatic
         flashAttention = defaults.object(forKey: "flashAttention") as? Bool ?? true
         reusePromptCache = defaults.object(forKey: "reusePromptCache") as? Bool ?? true
+        rememberLongChats = defaults.object(forKey: "rememberLongChats") as? Bool ?? true
+        conversationMemoryLimitGB = defaults.object(forKey: "conversationMemoryLimitGB") as? Double ?? 4
 
         memorySafety = MemorySafety(rawValue: defaults.string(forKey: "memorySafety") ?? "") ?? .balanced
         profilePreference = ProfilePreference(rawValue: defaults.string(forKey: "profilePreference") ?? "") ?? .automatic

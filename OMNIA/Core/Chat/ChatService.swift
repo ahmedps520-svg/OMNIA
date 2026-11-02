@@ -218,8 +218,8 @@ final class ChatService {
             live?.isPreparing = false
             for try await event in stream {
                 switch event {
-                case .started(let opensInReasoning):
-                    live?.opensInReasoning = opensInReasoning
+                case .started(let prompt):
+                    live?.opensInReasoning = prompt.opensInReasoning
                 case .promptProgress(let progress):
                     live?.promptProgress = progress
                 case .text(let text):

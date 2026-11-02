@@ -45,6 +45,7 @@ final class InferenceEngine {
     private(set) var lastStats: GenerationStats?
 
     @ObservationIgnored private var activeBackend: (any InferenceBackend)?
+    @ObservationIgnored private var activeMemoryURL: URL?
     @ObservationIgnored private var idleTimer: Timer?
     @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     @ObservationIgnored private var backgroundUnloadWork: DispatchWorkItem?
@@ -55,16 +56,27 @@ final class InferenceEngine {
     private let settings: AppSettings
     private let device: DeviceProfile
     private let monitor: PerformanceMonitor
+    /// Saved model memory of long conversations (see `ConversationMemoryStore`).
+    let conversationMemory: ConversationMemoryStore
 
-    init(store: ModelStore, settings: AppSettings, device: DeviceProfile, monitor: PerformanceMonitor) {
+    init(store: ModelStore, settings: AppSettings, device: DeviceProfile, monitor: PerformanceMonitor,
+         conversationMemory: ConversationMemoryStore = ConversationMemoryStore()) {
         self.store = store
         self.settings = settings
         self.device = device
         self.monitor = monitor
+        self.conversationMemory = conversationMemory
         monitor.onMemoryPressure = { [weak self] level in self?.handleMemoryPressure(level) }
         monitor.onThermalChange = { [weak self] state in self?.handleThermalChange(state) }
-        store.willDeleteModel = { [weak self] model in await self?.unload(model.id) }
+        store.willDeleteModel = { [weak self] model in
+            await self?.unload(model.id)
+            await self?.conversationMemory.removeAll(modelID: model.id)
+        }
         scheduleIdleCheck()
+    }
+
+    private var conversationMemoryLimit: Int64 {
+        Int64(max(0, settings.conversationMemoryLimitGB) * 1_073_741_824)
     }
 
     var profile: OptimizationProfile { OptimizationProfile.resolve(device: device, preference: settings.profilePreference) }
@@ -201,6 +213,15 @@ final class InferenceEngine {
         var request = request
         if !settings.reusePromptCache { request.reusePromptCache = false }
         request.pacing = currentPacing()
+        activeMemoryURL = nil
+        if let key = request.memoryKey, settings.rememberLongChats, request.reusePromptCache {
+            conversationMemory.enforceLimit(conversationMemoryLimit)
+            let memory = conversationMemory.request(conversationID: key, modelID: model.id, modelSize: model.sizeBytes,
+                                                    configuration: entry.info.configuration,
+                                                    limitBytes: conversationMemoryLimit)
+            request.memory = memory
+            activeMemoryURL = memory.fileURL
+        }
         let backend = entry.backend
         activeBackend = backend
         live = LiveGeneration(modelID: model.id, modelName: model.displayName, startedAt: .now,
@@ -250,6 +271,9 @@ final class InferenceEngine {
 
     private func finishGeneration() {
         if let id = live?.modelID { loaded[id]?.lastUsed = .now }
+        // A save restored or written for this conversation was just used: evict it last.
+        if let url = activeMemoryURL { conversationMemory.touch(url) }
+        activeMemoryURL = nil
         live = nil
         activeBackend = nil
         monitor.setDetailedSampling(false)
