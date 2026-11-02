@@ -1,0 +1,121 @@
+# OMNIA build 03 plan
+
+Build 03 adds everything from the build-03 ideas list, plus a **workspace panel** for previewing and running code and a **browser** the AI can use. Each feature is designed, implemented, tested and compiled on its own before the next one starts. Nothing goes to TestFlight until the whole build is green.
+
+Status: **in progress**. This file is updated as stages land.
+
+---
+
+## How every feature is verified
+
+OMNIA is developed without a local Mac, so each check has to run in the cloud:
+
+| Check | What it proves | Where |
+|---|---|---|
+| Unit tests | Parsers, planners, prompt building, tool logic and so on behave as designed | GitHub Actions, iPad simulator |
+| Engine tests with tiny models | llama.cpp features really run end to end, including saved memory, JSON, tools, speculative decoding, embeddings and images. Small public GGUF models (a few MB to ~200 MB) are downloaded and cached on CI. | GitHub Actions, iPad simulator (CPU) |
+| Device compile | The Release app builds for real iPads and iPhones | GitHub Actions |
+| Signing check | New capabilities and extensions sign correctly | TestFlight workflow, before the final upload |
+| Your devices | Things a cloud Mac can't do: GPU speed, Apple Intelligence, microphone, background GPU, Lock Screen, share sheet | A short checklist when build 03 arrives |
+
+---
+
+## Stage 1: Test foundation (in progress)
+
+- llama.cpp's release framework has no simulator slice, so CI now builds one from the same source tag and caches it. Release builds still use the official, checksum-verified framework.
+- New engine-test harness: real model loads and generations on the simulator's CPU with tiny models.
+
+## Stage 2: Saved chat memory, JSON mode and tools
+
+**Saved chat memory.** After a long reply, OMNIA saves the model's working memory (its KV cache) for that conversation. Reopening the chat later continues instantly instead of re-reading the whole history.
+- The save is tied to the exact model and settings, and is discarded if either changes.
+- Storage is capped and the least-recently-used saves go first. Deleting a conversation deletes its save. Settings has an on/off switch and a "Clear" button.
+
+**JSON mode.** A per-conversation setting that forces valid JSON output using llama.cpp's grammar-constrained sampling. Thinking is switched off in this mode, because constrained output can't contain a reasoning block.
+
+**Tools.** The model can call tools mid-answer, and each call shows in the chat as a collapsible step:
+- Calculator
+- Date and time
+- Search your documents
+- Web search and open web page (stage 6, only when web access is on)
+- Run code (stage 6)
+
+Tool calls use each model's own chat-template format (Qwen/Hermes, Gemma, gpt-oss, Mistral, Granite, LFM). Models without native tool support get a described protocol instead. Each conversation can turn tools on or off.
+
+## Stage 3: Speculative decoding
+
+A small "draft" model guesses several tokens ahead and the big model checks them all at once. That makes big models answer faster with identical output quality, because every emitted token is still the big model's own choice.
+- OMNIA offers this only when both models share a tokenizer.
+- The memory planner counts both models.
+- It's not available for hybrid or recurrent models (the Qwen3.5 and LFM families), because their memory can't be rolled back.
+
+## Stage 4: Photos and screenshots in chat
+
+- Attach photos, screenshots or images from Files.
+- Vision models such as Gemma 4 get their image encoders (mmproj files) added to the catalog. They're downloaded with the model, or later with one tap.
+- Uses llama.cpp's multimodal library, which is already in the pinned framework.
+
+## Stage 5: Smarter document search
+
+- An optional small embedding model finds passages by meaning, combined with the existing keyword search (hybrid ranking).
+- Documents are indexed once, on device.
+
+## Stage 6: Workspace panel, browser and web access
+
+A panel beside the chat on iPad (a sheet on iPhone), with three tabs:
+
+- **Preview** runs the selected reply's code: HTML with its CSS and JavaScript, SVG, Markdown and JSON. A console shows logs and errors, and **Run** also works for plain JavaScript and **Python**. Python uses Pyodide, bundled so it works offline. Previews are sandboxed and have no network unless you allow it.
+- **Code** lists every code block in the conversation. Copy, save to Files, or open any of them in Preview.
+- **Browser** is a full in-app browser with an address bar, back/forward and share. "Ask about this page" sends the page's text to the chat.
+
+**AI web access** is off by default and blocked by Offline-only mode. When it's on, the model can search the web and open pages. Every page it opens appears in the Browser tab, so you can see exactly what it read.
+
+The model can also run code it wrote and read back the output or errors, so it can fix its own mistakes.
+
+## Stage 7: More engines
+
+**Apple's on-device model.** Appears as a built-in model with no download needed. It needs Apple Intelligence to be on, and works in chat and Compare. Its context window is small (about 4,000 tokens) and OMNIA says so. Only statistics Apple's API actually provides are shown.
+
+**MLX engine.** An optional second engine for MLX-format models (safetensors from mlx-community). It uses the M5's Neural Accelerators for faster prompt reading. MLX models get their own catalog section, memory estimates and download handling.
+
+## Stage 8: Voice
+
+- **Dictation:** a microphone button in the composer, with live on-device transcription.
+- **Read aloud:** reads a reply aloud, with optional automatic reading. Markdown and code are cleaned up for speech.
+
+## Stage 9: iPad power features
+
+- **Background answers (iPad):** an answer keeps generating after you switch apps. This uses iPadOS 26's continued processing with background GPU access, with progress shown by the system. iPhone keeps the current behavior: it pauses and offers Continue.
+- **Keyboard shortcuts:**
+  - ⌘N new chat
+  - ⌘K switch model
+  - ⌘. stop
+  - ⌘F search
+  - ⌘1–5 sections
+  - ⌘, settings
+- **Multiple windows:** open any chat in its own window (Stage Manager, Split View).
+- **Device report:** a one-tap export of measured memory limits, load results and speeds, with no conversation content. Used to tune model fitting for your exact devices.
+
+## Stage 10: Share sheet, Shortcuts, Lock Screen
+
+- **Share extension:** "OMNIA" appears in the share sheet for text, links, images and PDFs, with an optional question. The item opens in a new chat the next time you open OMNIA. Apple doesn't let share extensions launch their app.
+- **Shortcuts and Siri:** "Ask OMNIA" and "Summarize with OMNIA" actions, which can also appear in the share sheet.
+- **Live Activity:** model download progress on the Lock Screen and in the Dynamic Island.
+
+## Stage 11: Release
+
+All tests green → TestFlight workflow → build 03 → your device checklist.
+
+---
+
+## Privacy (unchanged principles)
+
+- Inference stays on device: llama.cpp, MLX, or Apple's on-device model.
+- The only network use is what you turn on: model downloads, web access for the AI, network in previews, and pages you open in the browser. Offline-only mode blocks all of it.
+- No accounts, analytics or telemetry. The device report is shared only when you choose to.
+
+## Known risks
+
+- **New capabilities** (App Groups for the share extension, background GPU) may need switching on in the Apple developer portal. The signing check catches this before release.
+- **MLX on the simulator** is limited, so MLX is verified by compiling and by your device checklist rather than by CI engine tests.
+- **Large build:** if one stage hits a hard platform limit, it's documented here and the rest still ships.
