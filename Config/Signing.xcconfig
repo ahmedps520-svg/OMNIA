@@ -7,5 +7,5 @@
 //
 // Neither value is secret. A team picked in Xcode's Signing & Capabilities tab overrides this file.
 
-DEVELOPMENT_TEAM =
+DEVELOPMENT_TEAM = JJHTBSYSYD
 OMNIA_BUNDLE_ID_PREFIX = com.ahmedps520

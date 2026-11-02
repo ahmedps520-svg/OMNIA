@@ -112,14 +112,18 @@ struct InferenceHistoryView: View {
     }
 
     private var summaries: [ModelSummary] {
-        Dictionary(grouping: records.filter { $0.kind != .benchmark && $0.generatedTokens > 1 }, by: \.modelID)
-            .map { id, items in
-                ModelSummary(id: id, name: items.first?.modelName ?? id, runs: items.count,
-                             tokens: items.reduce(0) { $0 + $1.generatedTokens },
-                             averageSpeed: items.map(\.tokensPerSecond).reduce(0, +) / Double(items.count),
-                             averageFirstToken: items.map(\.timeToFirstToken).reduce(0, +) / Double(items.count))
-            }
-            .sorted { $0.runs > $1.runs }
+        let measured: [InferenceRecord] = records.filter { $0.kind != .benchmark && $0.generatedTokens > 1 }
+        let grouped: [String: [InferenceRecord]] = Dictionary(grouping: measured, by: { $0.modelID })
+        var result: [ModelSummary] = []
+        for (id, items) in grouped {
+            let count = Double(items.count)
+            let tokens: Int = items.reduce(0) { $0 + $1.generatedTokens }
+            let speed: Double = items.reduce(0.0) { $0 + $1.tokensPerSecond } / count
+            let firstToken: Double = items.reduce(0.0) { $0 + $1.timeToFirstToken } / count
+            result.append(ModelSummary(id: id, name: items.first?.modelName ?? id, runs: items.count,
+                                       tokens: tokens, averageSpeed: speed, averageFirstToken: firstToken))
+        }
+        return result.sorted { $0.runs > $1.runs }
     }
 
     var body: some View {
