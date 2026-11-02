@@ -52,7 +52,7 @@ The entitlements in `Config/OMNIA.entitlements` — **Increased Memory Limit** a
 
 **Simulator.** The app runs in the Simulator for UI work. llama.cpp falls back to the CPU there and memory limits are estimated, so use a real device to judge model performance.
 
-**Tests.** `⌘U` runs the unit tests (GGUF parsing, memory planning, reasoning formats, Markdown, UTF-8 streaming, retrieval).
+**Tests.** `⌘U` runs the unit tests (GGUF parsing, memory planning, reasoning formats, Markdown, UTF-8 streaming, retrieval) on a simulator. The llama.cpp release XCFramework has no simulator slice, so first run `scripts/build-llama-xcframework.sh` once (needs CMake). It builds one from the same llama.cpp tag and places a combined copy in `Packages/LlamaFramework`, which `Package.swift` prefers while it exists. CI does the same and caches it.
 
 ## TestFlight
 
@@ -153,7 +153,7 @@ Downloads use a background `URLSession` and can be paused, resumed (across relau
 
 ## Maintenance
 
-**Updating llama.cpp.** Pick a build from [llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases). In `Packages/LlamaFramework/Package.swift`, replace the URL and the checksum, which is the SHA-256 shown next to the `llama-bXXXXX-xcframework.zip` asset. Diff `include/llama.h` against b11960 and adjust `Core/Engine/LlamaRuntime.swift` if the C API changed.
+**Updating llama.cpp.** Pick a build from [llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases). In `Packages/LlamaFramework/Package.swift`, replace `releaseURL` and `releaseChecksum`, the SHA-256 shown next to the `llama-bXXXXX-xcframework.zip` asset. Delete any local `Packages/LlamaFramework/llama.xcframework` and rerun `scripts/build-llama-xcframework.sh`; CI rebuilds its cached copy automatically. Diff `include/llama.h` against b11960 and adjust `Core/Engine/LlamaRuntime.swift` if the C API changed.
 
 **Refreshing the catalog.** `scripts/catalog/models.json` holds the verified file list. Then run:
 ```

@@ -20,6 +20,19 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      # The llama.cpp release has no iOS Simulator slice, so the tests use a copy with one built
+      # from the same tag (scripts/build-llama-xcframework.sh). It's cached per pinned release.
+      - name: Restore llama.cpp framework with simulator slice
+        id: llama
+        uses: actions/cache@v4
+        with:
+          path: Packages/LlamaFramework/llama.xcframework
+          key: llama-xcframework-${{ hashFiles('Packages/LlamaFramework/Package.swift', 'scripts/build-llama-xcframework.sh') }}
+
+      - name: Build llama.cpp simulator slice
+        if: steps.llama.outputs.cache-hit != 'true'
+        run: scripts/build-llama-xcframework.sh
+
       - name: Resolve packages
         run: xcodebuild -resolvePackageDependencies -project OMNIA.xcodeproj -scheme OMNIA
 
@@ -44,5 +57,5 @@ jobs:
           xcodebuild test \
             -project OMNIA.xcodeproj \
             -scheme OMNIA \
-            -destination "platform=iOS Simulator,name=$SIMULATOR" \
+            -destination "platform=iOS Simulator,name=$SIMULATOR,arch=arm64" \
             CODE_SIGNING_ALLOWED=NO

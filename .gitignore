@@ -11,6 +11,8 @@ build/
 # Swift Package Manager
 .build/
 .swiftpm/
+# Built by scripts/build-llama-xcframework.sh for simulator tests
+Packages/LlamaFramework/llama.xcframework/
 
 # Models never belong in the repository (they download after install)
 *.gguf
