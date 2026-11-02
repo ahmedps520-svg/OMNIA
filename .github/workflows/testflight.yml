@@ -7,9 +7,11 @@
 #   ASC_KEY_P8           The .p8 key file's full text (BEGIN/END lines included)
 #                        (or ASC_KEY_P8_BASE64 with the file base64-encoded)
 #
-# The API key needs the Admin role so Xcode can create the distribution certificate and
-# provisioning profile (cloud-managed signing). Create the app record in App Store Connect
-# first, with bundle ID "<prefix>.omnia".
+# The API key needs the Admin role. Xcode creates a development certificate and profile to
+# archive, and signs the upload with Apple's cloud-managed distribution certificate. Every
+# runner starts with an empty keychain, so the run revokes its development certificate at the
+# end; otherwise each run would leave one behind until the account's limit is reached.
+# Create the app record in App Store Connect first, with bundle ID "<prefix>.omnia".
 name: TestFlight
 
 on:
@@ -78,6 +80,14 @@ jobs:
             -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: Revoke this run's development certificate
+        if: always()
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
+        run: node scripts/revoke-ci-certificates.mjs
 
       - name: Remove key
         if: always()
