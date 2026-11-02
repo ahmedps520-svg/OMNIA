@@ -23,7 +23,7 @@ struct MessageRow: View {
         switch message.role {
         case .user: UserMessageView(message: message, isEditing: isEditing, editText: $editText, actions: actions)
         case .assistant: AssistantMessageView(message: message, live: live, isLast: isLast, actions: actions)
-        case .system: EmptyView()
+        case .system, .tool: EmptyView()
         }
     }
 }

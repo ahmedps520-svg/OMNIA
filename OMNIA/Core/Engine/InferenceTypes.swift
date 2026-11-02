@@ -1,13 +1,19 @@
 import Foundation
 
 enum ChatRole: String, Codable, Sendable, CaseIterable {
-    case system, user, assistant
+    /// `tool` only appears in prompts (a tool's result); stored messages are system, user or assistant.
+    case system, user, assistant, tool
 }
 
 /// One turn of a conversation as handed to the model's chat template.
 struct ChatTurn: Hashable, Sendable {
     var role: ChatRole
     var content: String
+    /// Calls an assistant turn made.
+    var toolCalls: [ToolCall] = []
+    /// For `.tool` turns: the call this result answers, and the tool's name.
+    var toolCallID: String?
+    var toolName: String?
 }
 
 enum KVCacheType: String, Codable, Sendable, CaseIterable, Identifiable {

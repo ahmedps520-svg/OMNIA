@@ -49,6 +49,8 @@ enum ConversationExporter {
                 lines.append("## \(message.modelName ?? "Assistant")")
             case .system:
                 lines.append("## System")
+            case .tool:
+                lines.append("## Tool")
             }
             lines.append("")
             lines.append(message.content)

@@ -359,7 +359,7 @@ final class ChatService {
             case .assistant:
                 guard !message.content.trimmed.isEmpty else { continue }
                 turns.append(ChatTurn(role: .assistant, content: message.content))
-            case .system:
+            case .system, .tool:
                 continue
             }
         }
