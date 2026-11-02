@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Raises the per-app jetsam memory limit so multi-gigabyte models can stay resident.
+	     OMNIA still measures the real headroom at runtime (os_proc_available_memory) and
+	     never loads a model whose estimate exceeds it. -->
+	<key>com.apple.developer.kernel.increased-memory-limit</key>
+	<true/>
+	<!-- Larger virtual address space for memory-mapping large GGUF files. -->
+	<key>com.apple.developer.kernel.extended-virtual-addressing</key>
+	<true/>
+</dict>
+</plist>

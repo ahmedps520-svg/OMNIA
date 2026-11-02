@@ -1,0 +1,48 @@
+# Compile check on a macOS runner: resolves packages, builds for device (unsigned) and runs
+# the unit tests on an iPad simulator. Useful when developing without a local Mac.
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Resolve packages
+        run: xcodebuild -resolvePackageDependencies -project OMNIA.xcodeproj -scheme OMNIA
+
+      - name: Build for iOS devices (unsigned)
+        run: |
+          xcodebuild build \
+            -project OMNIA.xcodeproj \
+            -scheme OMNIA \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Unit tests (iPad simulator)
+        run: |
+          SIMULATOR=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          names = [d["name"] for runtime, items in devices.items() if "iOS" in runtime for d in items]
+          ipads = [n for n in names if n.startswith("iPad Pro")] or [n for n in names if n.startswith("iPad")]
+          print((ipads or names)[0])')
+          echo "Testing on: $SIMULATOR"
+          xcodebuild test \
+            -project OMNIA.xcodeproj \
+            -scheme OMNIA \
+            -destination "platform=iOS Simulator,name=$SIMULATOR" \
+            CODE_SIGNING_ALLOWED=NO

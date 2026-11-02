@@ -1,0 +1,11 @@
+// OMNIA signing configuration
+//
+// DEVELOPMENT_TEAM        Your 10-character Apple Developer Team ID
+//                         (developer.apple.com › Account › Membership details).
+// OMNIA_BUNDLE_ID_PREFIX  A reverse-DNS prefix you own. The app's bundle identifier
+//                         becomes "<prefix>.omnia" and must be unique in your account.
+//
+// Neither value is secret. A team picked in Xcode's Signing & Capabilities tab overrides this file.
+
+DEVELOPMENT_TEAM =
+OMNIA_BUNDLE_ID_PREFIX = com.ahmedps520

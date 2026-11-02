@@ -1,0 +1,26 @@
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+*.xcarchive
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Models never belong in the repository (they download after install)
+*.gguf
+*.safetensors
+
+# Secrets
+*.p8
+*.mobileprovision
+*.p12
+
+# macOS / Windows
+.DS_Store
+Thumbs.db

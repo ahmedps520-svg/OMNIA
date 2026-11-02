@@ -1,0 +1,808 @@
+[
+  {
+    "id": "qwen3.8-27b",
+    "name": "Qwen3.8 27B",
+    "developer": "Qwen (Alibaba)",
+    "repo": "unsloth/Qwen3.8-27B-GGUF",
+    "architecture": "qwen35",
+    "params_total_b": 27.8,
+    "params_active_b": 27.8,
+    "context": 262144,
+    "license": "apache-2.0",
+    "notes": "Released Aug 5 2026. Dense hybrid (Gated DeltaNet + gated attention) LM with vision encoder; 27.8B incl. vision tower (27B LM); text-only use fine, mmproj optional. Highest-quality model in this catalog: Qwen card GPQA-Diamond 89.2, IFBench 79.5, SWE-bench Pro 61.7; Artificial Analysis Intelligence Index v5.0 small-class (4-40B) co-leader (20 at xhigh effort, tied with Nanbeige4.3-33B; 17 medium, 16 low, 10 non-reasoning). THINKING model: <think>...</think> on by default; chat-template kwargs enable_thinking=false (direct answers), reasoning_effort xhigh(default)/medium/low, preserve_thinking (default true) - use the GGUF's embedded Jinja template (llama.cpp --jinja). llama.cpp arch qwen35, supported since b7990 (Feb 10 2026, PR #19468). Unsloth dynamic (UD) quants chosen because they are much smaller than standard imatrix quants at equal bit-width (UD-IQ3_XXS 10.93GB vs bartowski IQ3_XXS 12.32GB); caveats: unsloth's embedded chat template is modified vs Qwen's original and these files contain no MTP layers. Alternative: bartowski/Qwen3.8-27B-GGUF (original template, built-in MTP layers for --spec-type draft-mtp; IQ2_M 10.52GB, IQ3_XXS 12.32GB, Q3_K_M 13.40GB). Device fit: 16GB iPad for UD-Q2_K_XL/UD-IQ3_XXS; UD-IQ2_XXS is the only realistic 12GB-device option (expect clear 2-bit quality loss). Dense 27B => slowest decode in the catalog. Requested quant types not published in this repo: IQ3_M, Q3_K_M, Q3_K_L, IQ2_M. Omitted as >13.5GB: UD-Q4_K_M 16.46GB, UD-Q5_K_M 19.77GB, UD-Q6_K 21.98GB, Q8_0 29.05GB, UD-IQ4_XS 14.25GB, Q4_0 16.06GB.",
+    "files": [
+      {
+        "quant": "UD-IQ2_XXS",
+        "filename": "Qwen3.8-27B-UD-IQ2_XXS.gguf",
+        "size": 7266070528,
+        "sha256": "e792d8fb3142fe6d9171876d6da0f71f05a71028718debc72dbec93ff645e67d"
+      },
+      {
+        "quant": "UD-Q2_K_XL",
+        "filename": "Qwen3.8-27B-UD-Q2_K_XL.gguf",
+        "size": 9828981664,
+        "sha256": "fd4730dd8aad070517978752b63d530aeb1740d2283cab9fa24f1e404032ddb0"
+      },
+      {
+        "quant": "UD-IQ3_XXS",
+        "filename": "Qwen3.8-27B-UD-IQ3_XXS.gguf",
+        "size": 10934860704,
+        "sha256": "c0b7c3038681ed2e3040456c1dd45f9858b6c2290bed172c70388a94874f3eee"
+      },
+      {
+        "quant": "UD-Q3_K_XL",
+        "filename": "Qwen3.8-27B-UD-Q3_K_XL.gguf",
+        "size": 13146393504,
+        "sha256": "8c2a45ff85e7674ca185ec8eb6cdeab0e617ed9d8018caed0b64380eb2a67a5e"
+      }
+    ]
+  },
+  {
+    "id": "qwen3.6-35b-a3b",
+    "name": "Qwen3.6 35B-A3B",
+    "developer": "Qwen (Alibaba)",
+    "repo": "unsloth/Qwen3.6-35B-A3B-GGUF",
+    "architecture": "qwen35moe",
+    "params_total_b": 36,
+    "params_active_b": 3,
+    "context": 262144,
+    "license": "apache-2.0",
+    "notes": "Released Apr 2026. MoE (256 experts, 8 routed + 1 shared, ~3B active) with vision encoder; very fast decode for its quality (GPQA-Diamond 86.0, SWE-bench Verified 73.4 as listed in Ornith's comparison table). THINKING model: on by default (enable_thinking=false to disable; preserve_thinking supported); embedded Jinja template required. llama.cpp arch qwen35moe since b7990 (Feb 10 2026). Only ~2-3-bit unsloth dynamic quants fit under 13.5GB, so 16GB iPad only. Unsloth template modified vs original; no MTP layers. Alternative: bartowski/Qwen_Qwen3.6-35B-A3B-GGUF (original template + MTP; IQ2_M 12.96GB). See also ornith-1.5-35b-a3b (same architecture, stronger vendor scores). Requested quant types not published in this repo: Q4_0, IQ3_M, Q3_K_L. Omitted as >13.5GB: UD-Q4_K_M 22.13GB, UD-Q5_K_M 26.46GB, UD-Q6_K 29.31GB, Q8_0 36.90GB, UD-IQ4_XS 17.73GB, MXFP4_MOE 21.71GB, UD-Q3_K_M 16.60GB.",
+    "files": [
+      {
+        "quant": "UD-IQ2_XXS",
+        "filename": "Qwen3.6-35B-A3B-UD-IQ2_XXS.gguf",
+        "size": 10756586464,
+        "sha256": "2e8f5f705355c56311432d0a8a5d14a696dbb7e4b197d05c75ba805fc1857bef"
+      },
+      {
+        "quant": "UD-IQ2_M",
+        "filename": "Qwen3.6-35B-A3B-UD-IQ2_M.gguf",
+        "size": 11522702304,
+        "sha256": "2be7ef1ed7e1af8b10d3829102cf9a6c2bd5ddb64d675b4ece23a60799403d43"
+      },
+      {
+        "quant": "UD-Q2_K_XL",
+        "filename": "Qwen3.6-35B-A3B-UD-Q2_K_XL.gguf",
+        "size": 12290628576,
+        "sha256": "96b9c0af5c77a4ecaabe3983175112b5ece763261c1ece12b2494b692a70dad7"
+      },
+      {
+        "quant": "UD-IQ3_XXS",
+        "filename": "Qwen3.6-35B-A3B-UD-IQ3_XXS.gguf",
+        "size": 13211155424,
+        "sha256": "9c964e657212fea1f24905dd7b0a89b82fd807d19fab0b41da14251b07b88fbe"
+      }
+    ]
+  },
+  {
+    "id": "ornith-1.5-35b-a3b",
+    "name": "Ornith 1.5 35B-A3B",
+    "developer": "Ornith AI",
+    "repo": "bartowski/Ornith-1.5-35B-A3B-GGUF",
+    "architecture": "qwen35moe",
+    "params_total_b": 36,
+    "params_active_b": 3,
+    "context": 262144,
+    "license": "mit",
+    "notes": "Released Aug 18 2026. Qwen3.6-35B-A3B-architecture MoE (~3B active, vision encoder included) further trained with Ornith's self-improving RL loop. Ornith's table vs Qwen3.6-35B-A3B: GPQA-Diamond 89.2 vs 86.0, SWE-bench Verified 79.0 vs 73.4, Terminal-Bench 2.1 67.8 vs 52.5, but MMLU-Pro 80.8 vs 82.7. ~4M GGUF downloads/month for the official repo. THINKING model (<think> by default). Context 262,144. llama.cpp arch qwen35moe (b7990+). The official ornith-ai/Ornith-1.5-35B-A3B-GGUF only publishes Q4_K_M (21.71GB) and larger, so bartowski supplies the 2-bit sizes; caveat: bartowski embeds the stock Qwen template, while the official GGUF embeds Ornith's modified template (Unsloth-style developer-role/tool-call fixes, merged system messages, reasoning kept in history) - consider overriding with it. Only ~2-bit fits: 16GB iPad only. Omitted as >13.5GB: Q4_K_M 21.86GB, Q5_K_M 25.49GB, Q6_K 30.53GB, Q8_0 37.81GB, IQ4_XS 19.28GB, Q4_0 20.42GB, IQ3_XXS 15.34GB, IQ3_M 17.37GB, Q3_K_M 16.70GB, Q3_K_L 17.36GB.",
+    "files": [
+      {
+        "quant": "IQ2_XXS",
+        "filename": "Ornith-1.5-35B-A3B-IQ2_XXS.gguf",
+        "size": 10255140512,
+        "sha256": "14963c6830ae8287ad42a53c0fd87ca9fc67a8de8da1d18e3a076a348e96a32f"
+      },
+      {
+        "quant": "IQ2_S",
+        "filename": "Ornith-1.5-35B-A3B-IQ2_S.gguf",
+        "size": 11486963360,
+        "sha256": "49b923ebe5f4d4a4384ccb86dd2b93effacc96ec1a3054a0192cc61dc045ebab"
+      },
+      {
+        "quant": "IQ2_M",
+        "filename": "Ornith-1.5-35B-A3B-IQ2_M.gguf",
+        "size": 12543403680,
+        "sha256": "be92ed1eb2da35876e91a5551c527ddcce450d49ec53aba92f03e26adba7b996"
+      }
+    ]
+  },
+  {
+    "id": "gemma-4-26b-a4b-it",
+    "name": "Gemma 4 26B-A4B IT",
+    "developer": "Google DeepMind",
+    "repo": "bartowski/google_gemma-4-26B-A4B-it-GGUF",
+    "architecture": "gemma4",
+    "params_total_b": 25.2,
+    "params_active_b": 3.8,
+    "context": 262144,
+    "license": "apache-2.0",
+    "notes": "Released Apr 2026. MoE (128 experts, 8 active + 1 shared; 3.8B active) with vision encoder (mmproj optional). Gemma 4 chat format (<|turn>role ... <turn|>). THINKING optional, OFF by default: kwarg enable_thinking=true inserts <|think|> in the system turn; thoughts come back as <|channel>thought ... <channel|> and must be stripped from history; when thinking is off this size still emits an empty thought block. llama.cpp arch gemma4 since b8637 (Apr 2 2026, PR #21309); use a build from ~Apr 10 2026 or later for tokenizer/template-parser fixes (#21343, #21418, #21492, #21704). bartowski chosen: embedded template byte-identical to Google's and it publishes the exact IQ2_M/IQ3_XXS/Q3_K_M/Q3_K_L/IQ3_M low-bit set under 13.5GB. Alternatives: unsloth/gemma-4-26B-A4B-it-GGUF (smaller UD quants, e.g. UD-IQ2_M 10.01GB, UD-IQ3_XXS 11.42GB; modified template); google/gemma-4-26B-A4B-it-qat-q4_0-gguf (official QAT Q4_0, 14.44GB - too big). 16GB iPad only. Omitted as >13.5GB: Q4_K_M 17.04GB, Q5_K_M 19.32GB, Q6_K 22.86GB, Q8_0 26.86GB, IQ4_XS 14.21GB, Q4_0 14.76GB.",
+    "files": [
+      {
+        "quant": "IQ2_M",
+        "filename": "google_gemma-4-26B-A4B-it-IQ2_M.gguf",
+        "size": 10700622464,
+        "sha256": "88c25a0e8ecc975b90bcf3766301d5e565a5378ed04fbdd04c8049d87eab43a5"
+      },
+      {
+        "quant": "IQ3_XXS",
+        "filename": "google_gemma-4-26B-A4B-it-IQ3_XXS.gguf",
+        "size": 12160200320,
+        "sha256": "61a9be08df2dd3ee5e98b23f1f548530c05ec89e02647a650f2ad447fcc83998"
+      },
+      {
+        "quant": "Q3_K_M",
+        "filename": "google_gemma-4-26B-A4B-it-Q3_K_M.gguf",
+        "size": 13019981440,
+        "sha256": "4826221b7a285284b65222537f58ebfc6880290ff5441e13bfb1a7ca4d65df21"
+      },
+      {
+        "quant": "Q3_K_L",
+        "filename": "google_gemma-4-26B-A4B-it-Q3_K_L.gguf",
+        "size": 13199180416,
+        "sha256": "2a74593c43e06245f86577f2d1e27a268d91be655993f70dfd64cb556214b347"
+      },
+      {
+        "quant": "IQ3_M",
+        "filename": "google_gemma-4-26B-A4B-it-IQ3_M.gguf",
+        "size": 13280213632,
+        "sha256": "b08876e7eb0adc0dcac8f2d24ec064c62fd2cbd1813514516ad669e75fefecf6"
+      }
+    ]
+  },
+  {
+    "id": "gpt-oss-20b",
+    "name": "gpt-oss-20b",
+    "developer": "OpenAI",
+    "repo": "ggml-org/gpt-oss-20b-GGUF",
+    "architecture": "gpt-oss",
+    "params_total_b": 20.9,
+    "params_active_b": 3.6,
+    "context": 131072,
+    "license": "apache-2.0",
+    "notes": "Released Aug 2025; still OpenAI's newest small open-weight chat model as of Nov 2026 (the openai HF org shows no newer gpt-oss chat model - only gpt-oss-safeguard-20b/120b (Sep 2025) and non-chat releases). MoE (32 experts, 4 active) with natively MXFP4 experts, so the MXFP4 GGUF is the canonical quant; other quant types barely shrink it (unsloth/gpt-oss-20b-GGUF Q2_K..Q8_0 are all 11.47-12.11GB). REASONING model using the Harmony format (analysis/commentary/final channels); set effort via system prompt ('Reasoning: low|medium|high'); requires llama.cpp's Jinja + Harmony parsing (--jinja). Context 131,072. llama.cpp arch gpt-oss since b6096 (Aug 5 2025, PR #15091). Repo also has an EAGLE3 draft model (eagle3-gpt-oss-20b-Q8_0.gguf) not listed. 16GB iPad only.",
+    "files": [
+      {
+        "quant": "MXFP4",
+        "filename": "gpt-oss-20b-MXFP4.gguf",
+        "size": 12109566624,
+        "sha256": "27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901"
+      }
+    ]
+  },
+  {
+    "id": "lfm2.5-24b-a2b",
+    "name": "LFM2.5 24B-A2B",
+    "developer": "Liquid AI",
+    "repo": "unsloth/LFM2.5-24B-A2B-GGUF",
+    "architecture": "lfm2moe",
+    "params_total_b": 24,
+    "params_active_b": 2.45,
+    "context": 131072,
+    "license": "lfm1.0",
+    "notes": "Released Oct 2026. Text-only hybrid (gated short-conv + attention) MoE, 64 experts / 4 active (2.45B active) - the fastest decode of the 20B+ tier and the most practical 20B+ option on 12GB devices (UD-IQ2_M 7.54GB, UD-IQ3_XXS 8.96GB). Pure REASONING model: always thinks (<think> in template; preserve_thinking kwarg). Liquid positions it for on-device agents/tool use and recommends pairing with retrieval for knowledge-heavy questions. Context 131,072. llama.cpp arch lfm2moe (PR #16464, Oct 2025) plus LFM2.5 128K-vocab tokenizer support (PR #23826, merged May 29 2026, approx b9402-b9415) and LFM2/2.5 chat-parser fixes (#24178, #24234, Jun 2026). unsloth chosen because the official LiquidAI/LFM2.5-24B-A2B-GGUF only has Q4_K_M (14.53GB) and QAD-Q4_0 (13.58GB) and up. License is Liquid's custom LFM Open License v1.0 - review commercial terms. Requested quant types not published in this repo: Q4_K_M, Q5_K_M, Q6_K, IQ4_XS, Q4_0, IQ3_M, Q3_K_M, Q3_K_L. Omitted as >13.5GB: Q8_0 25.49GB.",
+    "files": [
+      {
+        "quant": "UD-IQ2_M",
+        "filename": "LFM2.5-24B-A2B-UD-IQ2_M.gguf",
+        "size": 7535313152,
+        "sha256": "54d861a1245d460389e971112e07f9313d75778ba96e12880594f2352a83a992"
+      },
+      {
+        "quant": "UD-Q2_K_XL",
+        "filename": "LFM2.5-24B-A2B-UD-Q2_K_XL.gguf",
+        "size": 8042561760,
+        "sha256": "bc1b210bdeec1592e3dc374cc9154fd29654a9004d01a6a9eae4809de69f58dc"
+      },
+      {
+        "quant": "UD-IQ3_XXS",
+        "filename": "LFM2.5-24B-A2B-UD-IQ3_XXS.gguf",
+        "size": 8959328480,
+        "sha256": "e06694b1f0bb322ecfde6bf9af260d2f2047ed1b30bbfdd04d97bf55472bfeec"
+      },
+      {
+        "quant": "UD-Q3_K_XL",
+        "filename": "LFM2.5-24B-A2B-UD-Q3_K_XL.gguf",
+        "size": 10947100928,
+        "sha256": "d54834c785c7e265f1cb7375e47aa6f55a0b7cfab75816254c4d2e0c82fd5efc"
+      }
+    ]
+  },
+  {
+    "id": "muse-glimmer-30b",
+    "name": "Muse Glimmer 30B",
+    "developer": "Meta",
+    "repo": "bartowski/Muse-Glimmer-30B-GGUF",
+    "architecture": "muse-glimmer",
+    "params_total_b": 29.8,
+    "params_active_b": 29.8,
+    "context": 131072,
+    "license": "apache-2.0",
+    "notes": "Released Aug 2026; Meta's 2026 open-weight small model (distilled from Muse Spark; no new Llama-branded small model in 2026). Dense transformer + perception (vision) encoder; 29.6-29.8B incl. encoder. REASONING model with controllable effort: add 'Reasoning strength: <level>' to the system prompt. Context 131,072. llama.cpp arch muse-glimmer since b10353 (Aug 10 2026, PR #26841); chat/tool-call fixes through Sep 29 2026 (#26879, #29242, #29615). Caveat: bartowski/unsloth GGUFs embed an older chat template (7,167 chars) than the current official one (9,992 chars in meta-models/Muse-Glimmer-30B and meta-models/Muse-Glimmer-30B-GGUF) - consider overriding with the official template. Official meta-models GGUF only has Q4_K_M (16.76GB) and Q4_K_XL (19.65GB). Scores below Qwen3.8-27B on Qwen's card (GPQA-D 83.5 vs 89.2); AA Index v5.0: 6. 16GB iPad only; dense 30B at 2-3 bit will be slow. Omitted as >13.5GB: Q4_K_M 17.31GB, Q5_K_M 20.11GB, Q6_K 23.41GB, Q8_0 29.61GB, IQ4_XS 15.44GB, Q4_0 16.27GB, Q3_K_M 13.96GB, Q3_K_L 14.78GB.",
+    "files": [
+      {
+        "quant": "IQ2_M",
+        "filename": "Muse-Glimmer-30B-IQ2_M.gguf",
+        "size": 10657479200,
+        "sha256": "67a24245fb600a01668163b7afb5287c0413eff21f326b482da45b8fa0727e7d"
+      },
+      {
+        "quant": "IQ3_XXS",
+        "filename": "Muse-Glimmer-30B-IQ3_XXS.gguf",
+        "size": 11546640928,
+        "sha256": "bc489d8df5a3bdf85ef200bd1dcec9a436290502354810163549cac328dac90a"
+      },
+      {
+        "quant": "IQ3_M",
+        "filename": "Muse-Glimmer-30B-IQ3_M.gguf",
+        "size": 13106238240,
+        "sha256": "bc867ee4fc139be474cc4e6c1794ac584507ec510bcfdefe9772a61779181b6f"
+      }
+    ]
+  },
+  {
+    "id": "gemma-4-12b-it",
+    "name": "Gemma 4 12B IT",
+    "developer": "Google DeepMind",
+    "repo": "bartowski/gemma-4-12B-it-GGUF",
+    "architecture": "gemma4",
+    "params_total_b": 12,
+    "params_active_b": 12,
+    "context": 262144,
+    "license": "apache-2.0",
+    "notes": "Released May 23 2026 ('unified' Gemma 4 12B; dense, text+image+audio capable, text-only use fine). Gemma 4 chat format and thinking controls (thinking OFF by default; enable_thinking=true adds <|think|>; strip <|channel>thought blocks from history). Card context 256K; this repo's GGUF metadata reports context_length 131,072 (unsloth/ggml-org/Google GGUFs report 262,144) - irrelevant on-device. llama.cpp: gemma4 arch (b8637) plus the 12B 'unified' variant support from PR #24077 (merged Jun 3 2026, first in a build between b9490 and b9496; mmproj FPE fix in b9496). bartowski template is byte-identical to Google's. Higher-quality 4-bit alternatives from QAT checkpoints: google/gemma-4-12B-it-qat-q4_0-gguf -> gemma-4-12b-it-qat-q4_0.gguf (6,975,879,296 bytes) and unsloth/gemma-4-12B-it-qat-GGUF -> gemma-4-12B-it-qat-UD-Q4_K_XL.gguf (6,716,356,800 bytes). Fits 12GB devices at Q4/IQ4.",
+    "files": [
+      {
+        "quant": "IQ4_XS",
+        "filename": "gemma-4-12B-it-IQ4_XS.gguf",
+        "size": 6780746208,
+        "sha256": "60e817ec84aabab9d20ac1eeec5d0e5fc5859993eb2f234e0f0d95fef2aa87f7"
+      },
+      {
+        "quant": "Q4_0",
+        "filename": "gemma-4-12B-it-Q4_0.gguf",
+        "size": 7127759328,
+        "sha256": "3624c1b6039ceaf8bfaa92581401de40d25fab9bf914f31039a5940a0bc1ee15"
+      },
+      {
+        "quant": "Q4_K_M",
+        "filename": "gemma-4-12B-it-Q4_K_M.gguf",
+        "size": 7662533088,
+        "sha256": "3962624dcd25b947d889dc9ae1bf275b61db6cd4dbe694057f34fffef1671509"
+      },
+      {
+        "quant": "Q5_K_M",
+        "filename": "gemma-4-12B-it-Q5_K_M.gguf",
+        "size": 8774965728,
+        "sha256": "24fe88d9e6bba6a1805629a09e40d4d837a894d559c7708055f7a03211e2a25e"
+      },
+      {
+        "quant": "Q6_K",
+        "filename": "gemma-4-12B-it-Q6_K.gguf",
+        "size": 10239326688,
+        "sha256": "53336de05c4af36dcb61daf0d984be076ddf0245e3ce7f61aa10b72cb4044e97"
+      },
+      {
+        "quant": "Q8_0",
+        "filename": "gemma-4-12B-it-Q8_0.gguf",
+        "size": 12669647328,
+        "sha256": "929bd294cbdc59e41450488bea524a174f1c6ddc43f140fdb5905a5fd1e41969"
+      }
+    ]
+  },
+  {
+    "id": "ministral-3-14b-instruct-2512",
+    "name": "Ministral 3 14B Instruct 2512",
+    "developer": "Mistral AI",
+    "repo": "bartowski/mistralai_Ministral-3-14B-Instruct-2512-GGUF",
+    "architecture": "mistral3",
+    "params_total_b": 13.9,
+    "params_active_b": 13.9,
+    "context": 262144,
+    "license": "apache-2.0",
+    "notes": "Released Dec 2025; still Mistral's newest small dense chat model as of Nov 2026 (Mistral Small 4 is 119B MoE; no new Magistral small release found). 13.5B LM + 0.4B vision encoder. NON-thinking instruct model (fast, direct answers); a separate Ministral-3-14B-Reasoning-2512 (official mistralai GGUF, unsloth) exists. Mistral recommends temperature < 0.1. Context 262,144. llama.cpp arch mistral3; use a build >= ~b7363 (Dec 12 2025, PR #17945 attn_factor fix for Ministral 3) - parser added in PR #17713. bartowski chosen: full quant set and embedded template byte-identical to the official mistralai GGUF (unsloth's differs); official mistralai/Ministral-3-14B-Instruct-2512-GGUF only has Q4_K_M/Q5_K_M/Q8_0. Fits 12GB devices at Q4. Omitted as >13.5GB: Q8_0 14.36GB.",
+    "files": [
+      {
+        "quant": "IQ4_XS",
+        "filename": "mistralai_Ministral-3-14B-Instruct-2512-IQ4_XS.gguf",
+        "size": 7411185056,
+        "sha256": "2895179103887c0af8ae306d5c27d09d2ff4af7da1bda4866f06113d2b669668"
+      },
+      {
+        "quant": "Q4_0",
+        "filename": "mistralai_Ministral-3-14B-Instruct-2512-Q4_0.gguf",
+        "size": 7805711776,
+        "sha256": "33f6dfe39c946265744a44734c6636d2224b6a3cebfa39e1b502604598ba55ad"
+      },
+      {
+        "quant": "Q4_K_M",
+        "filename": "mistralai_Ministral-3-14B-Instruct-2512-Q4_K_M.gguf",
+        "size": 8239068576,
+        "sha256": "a95aea79c3043039306f9c3957aa091baf24d428507eb7596c59ddc54ff75b80"
+      },
+      {
+        "quant": "Q5_K_M",
+        "filename": "mistralai_Ministral-3-14B-Instruct-2512-Q5_K_M.gguf",
+        "size": 9620567456,
+        "sha256": "d6ab2abd228ed45c7d85b4896d6d6d86a40421e741aaf8add9da61c4a0563a0f"
+      },
+      {
+        "quant": "Q6_K",
+        "filename": "mistralai_Ministral-3-14B-Instruct-2512-Q6_K.gguf",
+        "size": 11088410016,
+        "sha256": "4321da3bfec9f407025e693e2c5dc05d166b7acc67b03bbada46c7eb5847b2cd"
+      }
+    ]
+  },
+  {
+    "id": "ornith-1.5-9b",
+    "name": "Ornith 1.5 9B",
+    "developer": "Ornith AI",
+    "repo": "ornith-ai/Ornith-1.5-9B-GGUF",
+    "architecture": "qwen35",
+    "params_total_b": 9.7,
+    "params_active_b": 9.7,
+    "context": 262144,
+    "license": "mit",
+    "notes": "Released Aug 18-19 2026. Qwen3.5-9B-architecture model (vision encoder included; text-only fine) trained further with a self-improving RL loop; strongest ~9B on vendor numbers (GPQA-Diamond 86.4 vs Qwen3.5-9B 81.7; HLE 20.2 vs 14.7; SWE-bench Verified 70.6 vs 53.2). Very widely used (~5.4M GGUF downloads). THINKING model (<think> by default; vLLM/SGLang use the qwen3 reasoning parser). Uses a modified Qwen chat template - the official GGUF embeds it, bartowski's has the stock Qwen template. Context 262,144 (YaRN to ~1M). Official files include MTP layers (GGUF param count 9.20B). llama.cpp arch qwen35 (b7990+). For IQ4_XS/Q4_0/IQ3 sizes use bartowski/Ornith-1.5-9B-GGUF. Fits 12GB devices at Q4/Q5. Requested quant types not published in this repo: IQ4_XS, Q4_0.",
+    "files": [
+      {
+        "quant": "Q4_K_M",
+        "filename": "Ornith-1.5-9B-Q4_K_M.gguf",
+        "size": 5780090816,
+        "sha256": "70c112196e0b7023803c9762752e46d29e612a92c83f995bc3ba1ceb07e8fab6"
+      },
+      {
+        "quant": "Q5_K_M",
+        "filename": "Ornith-1.5-9B-Q5_K_M.gguf",
+        "size": 6642544576,
+        "sha256": "e4d9634a3b6546a5c00a8680568fe1125f6c98c704ee51ae52ba07650fb4247d"
+      },
+      {
+        "quant": "Q6_K",
+        "filename": "Ornith-1.5-9B-Q6_K.gguf",
+        "size": 7558901696,
+        "sha256": "b6f76e74f86245b3caee014b797c10dca931c4dfdaabfb134eab655f81e4154a"
+      },
+      {
+        "quant": "Q8_0",
+        "filename": "Ornith-1.5-9B-Q8_0.gguf",
+        "size": 9786060384,
+        "sha256": "22086870b009dbe9815ee752c48a82de930118a7c5ce5599590892ae03b8b010"
+      }
+    ]
+  },
+  {
+    "id": "qwen3.5-9b",
+    "name": "Qwen3.5 9B",
+    "developer": "Qwen (Alibaba)",
+    "repo": "bartowski/Qwen_Qwen3.5-9B-GGUF",
+    "architecture": "qwen35",
+    "params_total_b": 9.7,
+    "params_active_b": 9.7,
+    "context": 262144,
+    "license": "apache-2.0",
+    "notes": "Released Feb 2026. Dense hybrid Gated-DeltaNet LM + vision encoder (text-only fine). THINKING model, on by default (enable_thinking=false for direct answers). Context 262,144. llama.cpp arch qwen35 since b7990 (Feb 10 2026). bartowski chosen: embedded template identical to Qwen's original and files include MTP layers usable for self-speculative decoding (--spec-type draft-mtp, llama.cpp b9180+). Cost: ~0.5GB larger than unsloth/Qwen3.5-9B-GGUF (Q4_K_M 5.68GB, modified template, no MTP). Base for Ornith-1.5-9B and MiMo-V2.6-Distill, which beat it on reasoning/agentic benchmarks.",
+    "files": [
+      {
+        "quant": "IQ4_XS",
+        "filename": "Qwen_Qwen3.5-9B-IQ4_XS.gguf",
+        "size": 5501202464,
+        "sha256": "7d977cc96c2e08616016d967f232083e354691a8a16f345b26f7d782ee5c9601"
+      },
+      {
+        "quant": "Q4_0",
+        "filename": "Qwen_Qwen3.5-9B-Q4_0.gguf",
+        "size": 5741391904,
+        "sha256": "a44b0e06af0c97cece312f6dca52b3639d038d1a74a2e194b22e159f9ccdbb21"
+      },
+      {
+        "quant": "Q4_K_M",
+        "filename": "Qwen_Qwen3.5-9B-Q4_K_M.gguf",
+        "size": 6169341984,
+        "sha256": "d784ce9eda1a5a7b51e8f705a9e6310844bf4f173654d115823c775fdea56d43"
+      },
+      {
+        "quant": "Q5_K_M",
+        "filename": "Qwen_Qwen3.5-9B-Q5_K_M.gguf",
+        "size": 7111487520,
+        "sha256": "a686d88ec1e6881f9bf161526826cd6d6874b7f0e80e0f79acf6144a132c5d7e"
+      },
+      {
+        "quant": "Q6_K",
+        "filename": "Qwen_Qwen3.5-9B-Q6_K.gguf",
+        "size": 7958818848,
+        "sha256": "073a9275e65d9c8cd2819cf5f77b99fbaa6e87ba591da6bbaa86ec073a64bfef"
+      },
+      {
+        "quant": "Q8_0",
+        "filename": "Qwen_Qwen3.5-9B-Q8_0.gguf",
+        "size": 9804541984,
+        "sha256": "b58fe056b5435070240de259f3f981aa38fee96825bbd78c088d5fd90e46f2b5"
+      }
+    ]
+  },
+  {
+    "id": "mimo-v2.6-distill-qwen-9b",
+    "name": "MiMo-V2.6 Distill Qwen 9B",
+    "developer": "Xiaomi MiMo",
+    "repo": "bartowski/MiMo-V2.6-Distill-Qwen-9B-GGUF",
+    "architecture": "qwen35",
+    "params_total_b": 9.4,
+    "params_active_b": 9.4,
+    "context": 262144,
+    "license": "mit",
+    "notes": "Released Sep 21 2026. SFT of Qwen3.5-9B on MiMo-V2.6-generated data (agentic/coding/general); Xiaomi reports large gains over Qwen3.5-9B (SWE-bench Pro 44.6 vs 32.0, Terminal-Bench 2.1 37.1 vs 27.0, Toolathlon 35.2 vs 25.9). THINKING model, on by default (template emits an empty <think></think> when enable_thinking=false). Context 262,144. llama.cpp arch qwen35 (b7990+). bartowski's card has no license metadata (base model is MIT); embedded template identical to Xiaomi's. ggml-org/MiMo-V2.6-Distill-Qwen-9B-GGUF only has Q8_0. Fits 12GB devices at Q4/Q5.",
+    "files": [
+      {
+        "quant": "IQ4_XS",
+        "filename": "MiMo-V2.6-Distill-Qwen-9B-IQ4_XS.gguf",
+        "size": 5227304480,
+        "sha256": "eccfbc188e71dec8350fbdd5af898d2a50691ac67e077327c52baa9da1e91d90"
+      },
+      {
+        "quant": "Q4_0",
+        "filename": "MiMo-V2.6-Distill-Qwen-9B-Q4_0.gguf",
+        "size": 5482829344,
+        "sha256": "0dadc6593e5fe790a510fcb7fcd1dc6993664db562b2e8ec7b34825e99d52f4f"
+      },
+      {
+        "quant": "Q4_K_M",
+        "filename": "MiMo-V2.6-Distill-Qwen-9B-Q4_K_M.gguf",
+        "size": 5841049120,
+        "sha256": "4bca6f18c73f72270c7a20c2ea2bea581de8246e318714277120369d34048c81"
+      },
+      {
+        "quant": "Q5_K_M",
+        "filename": "MiMo-V2.6-Distill-Qwen-9B-Q5_K_M.gguf",
+        "size": 6876124704,
+        "sha256": "04cf46f2b5584ef922697d6c063f94879434fb86c467f1a09e52daf0cddaf35f"
+      },
+      {
+        "quant": "Q6_K",
+        "filename": "MiMo-V2.6-Distill-Qwen-9B-Q6_K.gguf",
+        "size": 7793710624,
+        "sha256": "ef96d05a2ddf2cbb450d1af1ac3860ec769d3575bafa70692ee5609bda3fad7d"
+      },
+      {
+        "quant": "Q8_0",
+        "filename": "MiMo-V2.6-Distill-Qwen-9B-Q8_0.gguf",
+        "size": 9545979424,
+        "sha256": "2fad0aa11bb9e7aa491ff12f768954f9dd0a6e7d4ce4a897ca73ec420f3b90ae"
+      }
+    ]
+  },
+  {
+    "id": "granite-4.2-8b",
+    "name": "Granite 4.2 8B",
+    "developer": "IBM",
+    "repo": "ibm-granite/granite-4.2-8b-GGUF",
+    "architecture": "granite",
+    "params_total_b": 8.8,
+    "params_active_b": 8.8,
+    "context": 131072,
+    "license": "apache-2.0",
+    "notes": "Released Aug 2026 (card date Aug 25 2026). Dense reasoning model on the classic 'granite' arch (llama.cpp support since 2024, PR #9412 - any 2026 build). THINKING on by default; kwargs enable_thinking=false, reasoning_effort='low' (low-effort mode); prior-turn thinking truncated by default. Strong tool calling. Card: 128K native, 512K with extension; GGUF context 131,072. IBM numbers: AIME25 86.7, GPQA 64.1, MMLU-Pro 74.0, LiveCodeBench v6 73.2. Artificial Analysis Index v5.0: 5. Official repo has no IQ4_XS (bartowski/granite-4.2-8b-GGUF does). Requested quant types not published in this repo: IQ4_XS.",
+    "files": [
+      {
+        "quant": "Q4_0",
+        "filename": "granite-4.2-8b-Q4_0.gguf",
+        "size": 5055955072,
+        "sha256": "82af51c80f8c2913430aa020f97bd3d4708c5fc49c5bfbff09ac012f3c2132d2"
+      },
+      {
+        "quant": "Q4_K_M",
+        "filename": "granite-4.2-8b-Q4_K_M.gguf",
+        "size": 5347917952,
+        "sha256": "16a9369d0805f80b7377d25d87f937a90c05dc04ad79173a52001e42c9aab311"
+      },
+      {
+        "quant": "Q5_K_M",
+        "filename": "granite-4.2-8b-Q5_K_M.gguf",
+        "size": 6253887616,
+        "sha256": "074ac7ee98b1703674657a65051caebe188d543656e0ad71eb1f6bb3ae063407"
+      },
+      {
+        "quant": "Q6_K",
+        "filename": "granite-4.2-8b-Q6_K.gguf",
+        "size": 7216480384,
+        "sha256": "5ad3d67f6fe09a448031029bead7f6a088697ca2787c0c5640bf964c59df1a21"
+      },
+      {
+        "quant": "Q8_0",
+        "filename": "granite-4.2-8b-Q8_0.gguf",
+        "size": 9345613952,
+        "sha256": "fb66ad5750680c77c76b9dc095961375f14fc88ba15fd5fc084ef6e6701bad77"
+      }
+    ]
+  },
+  {
+    "id": "qwen3.5-4b",
+    "name": "Qwen3.5 4B",
+    "developer": "Qwen (Alibaba)",
+    "repo": "bartowski/Qwen_Qwen3.5-4B-GGUF",
+    "architecture": "qwen35",
+    "params_total_b": 4.7,
+    "params_active_b": 4.7,
+    "context": 262144,
+    "license": "apache-2.0",
+    "notes": "Released Feb-Mar 2026. Best general-knowledge/reasoning ~4B on vendor numbers (MMLU-Pro 79.1, GPQA-Diamond 76.2). Hybrid Gated-DeltaNet LM + vision encoder (text-only fine). THINKING on by default (enable_thinking=false for quick replies). Context 262,144 (small KV footprint thanks to linear-attention layers). llama.cpp arch qwen35 since b7990. bartowski: original template + MTP layers (--spec-type draft-mtp). Smaller alternative: unsloth/Qwen3.5-4B-GGUF (Q4_K_M 2.74GB; modified template, no MTP). Recommended iPhone default.",
+    "files": [
+      {
+        "quant": "IQ4_XS",
+        "filename": "Qwen_Qwen3.5-4B-IQ4_XS.gguf",
+        "size": 2671339488,
+        "sha256": "628124c61a806897d3f28dcd416be6daff94f62f731eb900d4381875eac9e412"
+      },
+      {
+        "quant": "Q4_0",
+        "filename": "Qwen_Qwen3.5-4B-Q4_0.gguf",
+        "size": 2776033248,
+        "sha256": "3e977de32dfb9377ff827f210091cce5d3c05c7b0f0b9b0c8005df7c0677a49b"
+      },
+      {
+        "quant": "Q4_K_M",
+        "filename": "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+        "size": 3013027808,
+        "sha256": "13c16f426047e2de38cd075bdade4a7bcbc8c774384876f677740cda65f8a983"
+      },
+      {
+        "quant": "Q5_K_M",
+        "filename": "Qwen_Qwen3.5-4B-Q5_K_M.gguf",
+        "size": 3443763168,
+        "sha256": "21c4643259ce62ffd979848e5819ce03823fd9e9902279ab54cc0d572d83d33e"
+      },
+      {
+        "quant": "Q6_K",
+        "filename": "Qwen_Qwen3.5-4B-Q6_K.gguf",
+        "size": 3805358048,
+        "sha256": "5a5bc7a3f9375b395e9f81fb69109038cf160c84606b8192f13cbb8355ca59f2"
+      },
+      {
+        "quant": "Q8_0",
+        "filename": "Qwen_Qwen3.5-4B-Q8_0.gguf",
+        "size": 4622131168,
+        "sha256": "5c74c0ede371924357dff0cb6ba145bd67208b9b2389ded681adfff3f7608db7"
+      }
+    ]
+  },
+  {
+    "id": "nemotron-3.5-bolt-e4b",
+    "name": "NVIDIA Nemotron 3.5 Bolt E4B",
+    "developer": "NVIDIA",
+    "repo": "bartowski/NVIDIA-Nemotron-3.5-Bolt-E4B-GGUF",
+    "architecture": "gemma4",
+    "params_total_b": 8,
+    "params_active_b": 4.5,
+    "context": 65536,
+    "license": "openmdw-1.1",
+    "notes": "Released Oct 23 2026. Gemma-4-E4B-it post-trained by NVIDIA for on-device chat, instruction following, role-play and tool use; NVIDIA reports wins over Gemma 4 E4B and Qwen3.5-4B on most chat/IF evals (IFBench 63.8 vs 42.8/58.9; MultiChallenge 53.1 vs 42.1/51.8) but Qwen3.5-4B stays ahead on Tau2/BFCL. 8B incl. per-layer embeddings, ~4-4.5B effective. THINKING on by default (enable_thinking=false; NVIDIA documents a two-pass thinking-budget client); Gemma 4 chat format; extra 'conversational_mode' template kwarg. Context 64K (GGUF 65,536). License OpenMDW-1.1 per NVIDIA card (bartowski's card has no license metadata; ggml-org's copy is tagged apache-2.0). llama.cpp arch gemma4 (b8637+). Official single file: nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-4GB -> Nemotron-3.5-Bolt-E4B-Q4_K_M.gguf (6,180,446,208 bytes, sha256 c8af2b8aea10a690a1d9491db744a9446660173cb38fc489612b556615a69612).",
+    "files": [
+      {
+        "quant": "IQ4_XS",
+        "filename": "NVIDIA-Nemotron-3.5-Bolt-E4B-IQ4_XS.gguf",
+        "size": 4770131296,
+        "sha256": "7874aa84419f61b3ced4cbe762a171ccc3d2930381bf58fd0685dde888e89d46"
+      },
+      {
+        "quant": "Q4_K_M",
+        "filename": "NVIDIA-Nemotron-3.5-Bolt-E4B-Q4_K_M.gguf",
+        "size": 5162292576,
+        "sha256": "5f0f982d11bc1408783d13e4440b06e6c1e989024ac26f9a2999cb4c496bedcc"
+      },
+      {
+        "quant": "Q4_0",
+        "filename": "NVIDIA-Nemotron-3.5-Bolt-E4B-Q4_0.gguf",
+        "size": 5223863648,
+        "sha256": "576045a32183bd9945ecf4b7b007592da8eaa9f277beb7de566101571b1b6628"
+      },
+      {
+        "quant": "Q5_K_M",
+        "filename": "NVIDIA-Nemotron-3.5-Bolt-E4B-Q5_K_M.gguf",
+        "size": 5983548768,
+        "sha256": "58e25be8678a32cc28d9f31400d41759ee1f1cdd24e7133d87f49a7089a654d7"
+      },
+      {
+        "quant": "Q6_K",
+        "filename": "NVIDIA-Nemotron-3.5-Bolt-E4B-Q6_K.gguf",
+        "size": 6448997728,
+        "sha256": "e372a90ea52b410fcd782a5a91caccb081f77389965dd7aae3620482760e1e98"
+      },
+      {
+        "quant": "Q8_0",
+        "filename": "NVIDIA-Nemotron-3.5-Bolt-E4B-Q8_0.gguf",
+        "size": 8031245664,
+        "sha256": "05d749c477d716a4c6cce6bfcff319c71c390826b859cdc2f14291ab7832ca44"
+      }
+    ]
+  },
+  {
+    "id": "gemma-4-e4b-it",
+    "name": "Gemma 4 E4B IT",
+    "developer": "Google DeepMind",
+    "repo": "bartowski/google_gemma-4-E4B-it-GGUF",
+    "architecture": "gemma4",
+    "params_total_b": 8,
+    "params_active_b": 4.5,
+    "context": 131072,
+    "license": "apache-2.0",
+    "notes": "Released Apr 2026. 4.5B effective (8B with per-layer embeddings); text+image+audio capable, text-only fine. Gemma 4 chat format (<|turn>...<turn|>); thinking OFF by default (enable_thinking=true adds <|think|>; E-models emit no empty thought block when off). Context 131,072. llama.cpp arch gemma4 since b8637 (Apr 2 2026); prefer builds from ~Apr 10 2026+. bartowski template identical to Google's. Alternatives: google/gemma-4-E4B-it-qat-q4_0-gguf -> gemma-4-E4B_q4_0-it.gguf (5,154,941,280 bytes, official QAT); unsloth/gemma-4-E4B-it-GGUF (Q4_K_M 4.98GB, modified template).",
+    "files": [
+      {
+        "quant": "IQ4_XS",
+        "filename": "google_gemma-4-E4B-it-IQ4_XS.gguf",
+        "size": 5112828384,
+        "sha256": "a24429604e6f680e7bdf087b863a6cecc90f80b3d908f95d888f4f05003fdee3"
+      },
+      {
+        "quant": "Q4_0",
+        "filename": "google_gemma-4-E4B-it-Q4_0.gguf",
+        "size": 5223860704,
+        "sha256": "604e903d29d2e0bbcee3dad449adc3e022299bf8a2d1dc7bc0166470e88d2203"
+      },
+      {
+        "quant": "Q4_K_M",
+        "filename": "google_gemma-4-E4B-it-Q4_K_M.gguf",
+        "size": 5405170144,
+        "sha256": "d35a3aa7a6d47de237fd488bb6f7f3efd62908d828f85a63da0ee93acdbefe9f"
+      },
+      {
+        "quant": "Q5_K_M",
+        "filename": "google_gemma-4-E4B-it-Q5_K_M.gguf",
+        "size": 5820883424,
+        "sha256": "1c57b87a06a7c0fd1b9fa8f5d5e505b720c15099648e0dcdc78acd857f72a7cc"
+      },
+      {
+        "quant": "Q6_K",
+        "filename": "google_gemma-4-E4B-it-Q6_K.gguf",
+        "size": 6329954784,
+        "sha256": "bea1c94443c91fff61a722d9da5cd3f1cf0196d1e914798ee89d3c00ea365df9"
+      },
+      {
+        "quant": "Q8_0",
+        "filename": "google_gemma-4-E4B-it-Q8_0.gguf",
+        "size": 8031242720,
+        "sha256": "6a6eba0d36a051b5d924211a889c1436717006e7c5d413830c47caa1d46cb598"
+      }
+    ]
+  },
+  {
+    "id": "granite-4.2-3b",
+    "name": "Granite 4.2 3B",
+    "developer": "IBM",
+    "repo": "ibm-granite/granite-4.2-3b-GGUF",
+    "architecture": "granite",
+    "params_total_b": 3.7,
+    "params_active_b": 3.7,
+    "context": 131072,
+    "license": "apache-2.0",
+    "notes": "Released Aug 2026. Dense reasoning model ('granite' arch, any 2026 llama.cpp build). Top of Artificial Analysis' tiny (<=4B) open-model list (Index v5.0: 4.7). Same thinking kwargs as Granite 4.2 8B (enable_thinking default true; reasoning_effort='low'). IBM numbers: AIME25 78.3, GPQA 54.8, MMLU-Pro 67.8 (weaker knowledge than Qwen3.5-4B's vendor numbers). GGUF context 131,072 (512K with extension per card). Official repo has no IQ4_XS (bartowski/granite-4.2-3b-GGUF does). Requested quant types not published in this repo: IQ4_XS.",
+    "files": [
+      {
+        "quant": "Q4_0",
+        "filename": "granite-4.2-3b-Q4_0.gguf",
+        "size": 2129118752,
+        "sha256": "d34a4a7c0b230d3f544eca502beb7e04efc3a0ebd59e2f2df50058f23cc20711"
+      },
+      {
+        "quant": "Q4_K_M",
+        "filename": "granite-4.2-3b-Q4_K_M.gguf",
+        "size": 2244011552,
+        "sha256": "e0406663965846ae22a403456eb826ccce5f450840491f71952f18a7cb78e7d5"
+      },
+      {
+        "quant": "Q5_K_M",
+        "filename": "granite-4.2-3b-Q5_K_M.gguf",
+        "size": 2613634592,
+        "sha256": "982e797413f842329266a00c2a85ce540bb5c1b65ac4646276bfb9d2886c5efe"
+      },
+      {
+        "quant": "Q6_K",
+        "filename": "granite-4.2-3b-Q6_K.gguf",
+        "size": 3006359072,
+        "sha256": "2e08e2790489162105be79b7f26a81fde28ea30119fa6df12594acd59f12dd96"
+      },
+      {
+        "quant": "Q8_0",
+        "filename": "granite-4.2-3b-Q8_0.gguf",
+        "size": 3892651552,
+        "sha256": "fbe986738041418e26de9e123ba740cb654931f85bf572a71bd01f9e6b85e53d"
+      }
+    ]
+  },
+  {
+    "id": "lfm3-1.7b",
+    "name": "LFM3 1.7B",
+    "developer": "Liquid AI",
+    "repo": "LiquidAI/LFM3-1.7B-GGUF",
+    "architecture": "lfm3",
+    "params_total_b": 1.7,
+    "params_active_b": 1.7,
+    "context": 262144,
+    "license": "lfm1.0",
+    "notes": "Released Oct 23-27 2026. Text-only tri-hybrid (13 gated short-conv + 5 sliding-window + 6 global-attention layers), 256K context; built for fast on-device agents. REASONING on by default (enable_thinking=false possible but 'can be inconsistent' per card; preserve_thinking kwarg). Liquid's table: avg 49.4 vs Qwen3.5-4B 39.3 / Qwen3.5-9B 47.2 (agent-heavy mix; IFEval 96.7, IFBench 73.0) but weaker knowledge (GPQA-D 63.4 vs 75.8 for Qwen3.5-4B). NEWEST ARCH: lfm3 first appears in llama.cpp b11938 (Oct 27 2026, PR #31252); Liquid says use b11960 (v0.8.0) or newer - bundle a very recent llama.cpp. QAD-Q4_0 = quantization-aware-distilled Q4_0 (Liquid's recommended 4-bit). Sampling: temp 0.1, top_k 50, repeat_penalty 1.1 (math/science: temp 1.0, top_p 0.95, top_k 20). Files are 1.05-1.85GB (below the 1.5GB floor except Q8_0). Requested quant types not published in this repo: IQ4_XS.",
+    "files": [
+      {
+        "quant": "QAD-Q4_0",
+        "filename": "LFM3-1.7B-QAD-Q4_0.gguf",
+        "size": 1049615680,
+        "sha256": "43a7d09a0e9cba91b63eb7052488b9564569bddfd65754d2e426465e572a7452"
+      },
+      {
+        "quant": "Q4_K_M",
+        "filename": "LFM3-1.7B-Q4_K_M.gguf",
+        "size": 1099627808,
+        "sha256": "3793e1e6e2266919d6e015287221b41100175a98eddaba92e111aed3b05c93c4"
+      },
+      {
+        "quant": "Q5_K_M",
+        "filename": "LFM3-1.7B-Q5_K_M.gguf",
+        "size": 1258663200,
+        "sha256": "41e51fb0be5f472d323055f2734d986d5a2429570973508fa6322f3f07f6d7f3"
+      },
+      {
+        "quant": "Q6_K",
+        "filename": "LFM3-1.7B-Q6_K.gguf",
+        "size": 1427638304,
+        "sha256": "54e1bd947c77167823d45bf495f1c3e2d226ca7fb242f83cfa141ee3a6ab55c6"
+      },
+      {
+        "quant": "Q8_0",
+        "filename": "LFM3-1.7B-Q8_0.gguf",
+        "size": 1846238496,
+        "sha256": "8f6b24182258205e9e01e21f1f24a1f208c1e8115578825d202ce39976af20b6"
+      }
+    ]
+  },
+  {
+    "id": "gemma-4-e2b-it",
+    "name": "Gemma 4 E2B IT",
+    "developer": "Google DeepMind",
+    "repo": "bartowski/google_gemma-4-E2B-it-GGUF",
+    "architecture": "gemma4",
+    "params_total_b": 5.1,
+    "params_active_b": 2.3,
+    "context": 131072,
+    "license": "apache-2.0",
+    "notes": "Released Apr 2026. 2.3B effective (5.1B with per-layer embeddings); fastest Gemma 4, multimodal-capable. Same chat-format/thinking notes as Gemma 4 E4B (thinking off by default). Context 131,072. llama.cpp arch gemma4 since b8637 (prefer ~Apr 10 2026+). Alternatives: google/gemma-4-E2B-it-qat-q4_0-gguf -> gemma-4-E2B_q4_0-it.gguf (3,349,516,256 bytes, official QAT); unsloth/gemma-4-E2B-it-qat-mobile-GGUF -> gemma-4-E2B-it-qat-UD-Q2_K_XL.gguf (2,186,186,784 bytes, from Google's mobile QAT checkpoint).",
+    "files": [
+      {
+        "quant": "IQ4_XS",
+        "filename": "google_gemma-4-E2B-it-IQ4_XS.gguf",
+        "size": 3324311008,
+        "sha256": "41326b0d673997e4791153a96f6e452bc70460a760ed92994c24ca187ae8c6c2"
+      },
+      {
+        "quant": "Q4_0",
+        "filename": "google_gemma-4-E2B-it-Q4_0.gguf",
+        "size": 3378740704,
+        "sha256": "2d9a803a627ee94230dc23681008ae340d9785a2374e2a6a0c8d69c7ee7ea47e"
+      },
+      {
+        "quant": "Q4_K_M",
+        "filename": "google_gemma-4-E2B-it-Q4_K_M.gguf",
+        "size": 3462680032,
+        "sha256": "923c4c86177d2ee173a7f5b4fa3d0ac65f5962ab15e6d6a5bc250aec4fd7bf7e"
+      },
+      {
+        "quant": "Q5_K_M",
+        "filename": "google_gemma-4-E2B-it-Q5_K_M.gguf",
+        "size": 3658384864,
+        "sha256": "e0400afe4c2cc8069238bff9f6e990cd4e087f76aa8fc35a6f076874d0d6dac7"
+      },
+      {
+        "quant": "Q6_K",
+        "filename": "google_gemma-4-E2B-it-Q6_K.gguf",
+        "size": 3898486240,
+        "sha256": "d7ea8cdd30d8e15bf11e5a37e8c141a600ad161d847165591fe86ab0288fb9d4"
+      },
+      {
+        "quant": "Q8_0",
+        "filename": "google_gemma-4-E2B-it-Q8_0.gguf",
+        "size": 4967497184,
+        "sha256": "bb145c0e8c2ede3b6992b881f7eefe6b33275eeb9998f450b5c72f4eb1d78732"
+      }
+    ]
+  }
+]
