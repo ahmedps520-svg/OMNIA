@@ -32,10 +32,11 @@ jobs:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
         run: |
+          # tr strips the carriage returns a key copied on Windows can carry.
           if [ -n "$ASC_KEY_P8" ]; then
-            printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
+            printf '%s\n' "$ASC_KEY_P8" | tr -d '\r' > "$RUNNER_TEMP/AuthKey.p8"
           elif [ -n "$ASC_KEY_P8_BASE64" ]; then
-            echo "$ASC_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+            echo "$ASC_KEY_P8_BASE64" | base64 --decode | tr -d '\r' > "$RUNNER_TEMP/AuthKey.p8"
           else
             echo "::error::Add the ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 repository secrets first."
             exit 1
