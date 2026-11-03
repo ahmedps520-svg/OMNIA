@@ -49,8 +49,15 @@ struct ChatTemplateParityTests {
             let expected = try #require(fixture.expected[scenario.name])
             let rendered = try renderer.render(scenario.turns, addGenerationPrompt: true, variables: [:],
                                                tools: scenario.tools, date: Self.date)
-            #expect(rendered == expected, "\(scenario.name): \(Self.firstDifference(rendered, expected))")
+            // Compared through the first difference, so a failure reads in one short line.
+            let difference = rendered == expected ? nil : Self.firstDifference(rendered, expected)
+            #expect(difference == nil, "\(fixture.model) / \(scenario.name)")
         }
+    }
+
+    @Test func keepsJinja2WhitespaceAfterALiteralBrace() throws {
+        let renderer = try ChatTemplateRenderer(source: "a:{\n    {%- if true -%}\n    b\n{%- endif -%}\n}", bosToken: "", eosToken: "")
+        #expect(try renderer.render([], addGenerationPrompt: false, variables: [:]) == "a:{b}")
     }
 
     @Test(arguments: TemplateFixtures.all)

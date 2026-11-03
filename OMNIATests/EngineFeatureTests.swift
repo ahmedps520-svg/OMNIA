@@ -93,7 +93,10 @@ struct EngineFeatureTests {
     }
 
     @Test func templatesWithoutToolsUseTheTextProtocol() async throws {
-        let runtime = try await TestModels.load("stories260K.gguf")
+        // The tool instructions alone are ~650 tokens in this model's tiny vocabulary.
+        var configuration = TestModels.cpu
+        configuration.contextLength = 2048
+        let runtime = try await TestModels.load("stories260K.gguf", configuration: configuration)
         var request = GenerationRequest.user("What is 2+2?", maxTokens: 4)
         request.tools = ChatTemplateParityTests.tools
         var prompt: PromptInfo?

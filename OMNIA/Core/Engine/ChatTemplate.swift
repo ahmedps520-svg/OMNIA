@@ -45,9 +45,17 @@ struct ChatTemplateRenderer: Sendable {
     private let eosToken: String
 
     init(source: String, bosToken: String, eosToken: String) throws {
-        template = try Template(source, with: .init(lstripBlocks: true, trimBlocks: true))
+        template = try Template(Self.jinja2Compatible(source), with: .init(lstripBlocks: true, trimBlocks: true))
         self.bosToken = bosToken
         self.eosToken = eosToken
+    }
+
+    /// swift-jinja keeps one space between a literal "{" and a following "{%-", "{{-" or "{#-"
+    /// (so its preprocessor can't produce "{{%"), where Jinja2 removes all the whitespace. Writing
+    /// such a brace as an expression renders identically in both. Gemma 4's tool declarations
+    /// ("properties:{" followed by an indented "{%- if …") depend on it.
+    static func jinja2Compatible(_ source: String) -> String {
+        source.replacing(#/\{\s+\{([%{#])-/#) { match in "{{ '{' }}{\(match.1)-" }
     }
 
     /// - Parameter date: Fixes `strftime_now` (tests); templates otherwise see the current date.
