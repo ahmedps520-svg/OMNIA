@@ -77,7 +77,7 @@ struct WebHelperTests {
     }
 }
 
-@Suite("Running code", .serialized)
+@Suite("Running code", .serialized, .timeLimit(.minutes(10)))
 @MainActor
 struct CodeRunnerTests {
     private func runner() -> CodeRunner {

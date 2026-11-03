@@ -71,12 +71,15 @@ jobs:
           ipads = [n for n in names if n.startswith("iPad Pro")] or [n for n in names if n.startswith("iPad")]
           print((ipads or names)[0])')
           echo "Testing on: $SIMULATOR"
+          # One test at a time: llama.cpp spreads each model over the CPU cores, and suites running
+          # in parallel on CI's few cores stall each other's threads.
           set -o pipefail
           xcodebuild test \
             -project OMNIA.xcodeproj \
             -scheme OMNIA \
             -destination "platform=iOS Simulator,name=$SIMULATOR,arch=arm64" \
             -resultBundlePath "$RUNNER_TEMP/tests.xcresult" \
+            -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/test-build.log"
 
       # Compiler errors as annotations, so a failed build is readable from the run page.

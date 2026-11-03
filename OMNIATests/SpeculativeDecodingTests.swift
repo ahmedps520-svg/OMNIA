@@ -5,7 +5,7 @@ import Testing
 /// Speculative decoding must never change the reply: every token is the main model's own pick,
 /// the draft only lets it check several at once. Different quantizations of the same model make
 /// the draft guess wrong now and then, so rejected tokens get rolled back too.
-@Suite("Speculative decoding", .serialized)
+@Suite("Speculative decoding", .serialized, .timeLimit(.minutes(10)))
 struct SpeculativeDecodingTests {
     @Test(.enabled(if: TestModels.available("stories15M-q8_0.gguf", "stories15M-q4_0.gguf")))
     func matchesThePlainReplyOnAnAttentionModel() async throws {

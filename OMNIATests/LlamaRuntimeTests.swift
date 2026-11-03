@@ -3,7 +3,7 @@ import Testing
 @testable import OMNIA
 
 /// End-to-end checks of the llama.cpp runtime with a real (tiny) model.
-@Suite("llama.cpp runtime", .serialized, .enabled(if: TestModels.available("stories260K.gguf")))
+@Suite("llama.cpp runtime", .serialized, .timeLimit(.minutes(10)), .enabled(if: TestModels.available("stories260K.gguf")))
 struct LlamaRuntimeTests {
     @Test func greedyGenerationIsDeterministic() async throws {
         let runtime = try await TestModels.load("stories260K.gguf")

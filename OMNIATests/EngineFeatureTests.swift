@@ -3,7 +3,7 @@ import Testing
 @testable import OMNIA
 
 /// Stop sequences, grammars, saved conversation memory and tool prompts, end to end.
-@Suite("llama.cpp runtime features", .serialized,
+@Suite("llama.cpp runtime features", .serialized, .timeLimit(.minutes(10)),
        .enabled(if: TestModels.available("stories260K.gguf", "stories15M-q8_0.gguf")))
 struct EngineFeatureTests {
     @Test func stopSequenceEndsTheReplyBeforeIt() async throws {

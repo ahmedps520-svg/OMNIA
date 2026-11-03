@@ -13,7 +13,7 @@ enum VisionModels {
 /// llama.cpp's image path end to end, with two small vision models: SmolVLM (attention only,
 /// plain positions) and Qwen3.5 0.8B (hybrid, M-RoPE positions, where an image takes fewer
 /// positions than cache cells).
-@Suite("Vision", .serialized)
+@Suite("Vision", .serialized, .timeLimit(.minutes(10)))
 struct VisionEngineTests {
     static let configuration = RuntimeConfiguration(contextLength: 2048, batchSize: 512, microBatchSize: 512, threads: 2,
                                                     gpuOffload: false, kvCacheType: .f16, flashAttention: false)

@@ -50,7 +50,7 @@ struct HybridSearchTests {
     }
 }
 
-@Suite("Embeddings", .serialized, .enabled(if: TestModels.available("bge-small-f16.gguf")))
+@Suite("Embeddings", .serialized, .timeLimit(.minutes(10)), .enabled(if: TestModels.available("bge-small-f16.gguf")))
 struct EmbeddingRuntimeTests {
     private func load() async throws -> EmbeddingRuntime {
         try await EmbeddingRuntime.load(fileURL: try #require(TestModels.url("bge-small-f16.gguf")), contextLength: 512, threads: 2)
@@ -93,7 +93,7 @@ struct EmbeddingRuntimeTests {
     }
 }
 
-@Suite("Library index", .serialized, .enabled(if: TestModels.available("bge-small-f16.gguf")))
+@Suite("Library index", .serialized, .timeLimit(.minutes(10)), .enabled(if: TestModels.available("bge-small-f16.gguf")))
 @MainActor
 struct SemanticIndexTests {
     @Test func indexesTheLibraryAndFindsPassagesByMeaning() async throws {
