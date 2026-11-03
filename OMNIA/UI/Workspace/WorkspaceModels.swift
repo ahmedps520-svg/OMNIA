@@ -63,7 +63,13 @@ final class BrowserSession: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func goBack() { webView.goBack() }
     func goForward() { webView.goForward() }
-    func reload() { isLoading ? webView.stopLoading() : webView.reload() }
+    func reload() {
+        if isLoading {
+            webView.stopLoading()
+        } else {
+            webView.reload()
+        }
+    }
 
     /// The current page's readable text, as an attachment for a question about it.
     func pageAttachment() async -> AttachmentRecord? {
