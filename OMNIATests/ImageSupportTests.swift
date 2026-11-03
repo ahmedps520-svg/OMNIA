@@ -309,7 +309,8 @@ struct ImageEncoderStoreTests {
         let projector = try #require(store.model(id: "a/q8.gguf")?.projector)
         #expect(projector.relativePath == ModelStore.projectorStorageName(repo: "org/vision", fileName: "mmproj.gguf"))
         #expect(projector.verification == .verified)
-        let url = try #require(store.projectorURL(for: try #require(store.model(id: "a/q4.gguf"))))
+        let owner = try #require(store.model(id: "a/q4.gguf"))
+        let url = try #require(store.projectorURL(for: owner))
         #expect(FileManager.default.fileExists(atPath: url.path(percentEncoded: false)))
         #expect(store.isProjectorInstalled(repo: "org/vision", fileName: "mmproj.gguf"))
     }
@@ -320,7 +321,8 @@ struct ImageEncoderStoreTests {
         let store = try makeStore(in: directory)
         try store.installProjector(fileAt: try makeEncoder(in: directory), for: "a/q4.gguf", repo: "org/vision",
                                    fileName: "mmproj.gguf", sha256: nil, verification: .structureValid, moveFile: true)
-        let url = try #require(store.projectorURL(for: try #require(store.model(id: "a/q4.gguf"))))
+        let owner = try #require(store.model(id: "a/q4.gguf"))
+        let url = try #require(store.projectorURL(for: owner))
 
         await store.removeProjector(from: "a/q4.gguf")
         #expect(store.model(id: "a/q4.gguf")?.projector == nil)
@@ -345,7 +347,8 @@ struct ImageEncoderStoreTests {
         #expect(store.model(id: "a/q4.gguf")?.supportsImages == true)
 
         // An encoder file that went missing turns image support off instead of failing later.
-        let url = try #require(store.projectorURL(for: try #require(store.model(id: "a/q4.gguf"))))
+        let owner = try #require(store.model(id: "a/q4.gguf"))
+        let url = try #require(store.projectorURL(for: owner))
         try FileManager.default.removeItem(at: url)
         store.reconcile()
         #expect(store.model(id: "a/q4.gguf")?.projector == nil)
