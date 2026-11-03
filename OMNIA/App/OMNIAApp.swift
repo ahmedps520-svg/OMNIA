@@ -27,6 +27,7 @@ struct OMNIAApp: App {
                 .environment(services.python)
                 .environment(services.speech)
                 .environment(services.dictation)
+                .environment(services.navigator)
                 .modelContainer(services.container)
                 .onOpenURL { url in
                     guard url.isFileURL else { return }

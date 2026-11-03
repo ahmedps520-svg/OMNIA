@@ -5,6 +5,7 @@ struct RootView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(InferenceEngine.self) private var engine
     @Environment(ModelImporter.self) private var importer
+    @Environment(AppNavigator.self) private var navigator
 
     @State private var selection: SidebarSelection?
     @State private var columnVisibility: NavigationSplitViewVisibility
@@ -80,6 +81,11 @@ struct RootView: View {
             }
         }
         .omniaAnimation(settings.animations, value: engine.notice)
+        .onChange(of: navigator.request, initial: true) { _, request in
+            guard let request else { return }
+            selection = .conversation(request.conversation)
+            navigator.handled(request)
+        }
         .focusedSceneValue(\.windowCommands, WindowCommands(
             newChat: { selection = .section(.chat) },
             show: { selection = .section($0) },

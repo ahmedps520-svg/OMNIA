@@ -10,6 +10,7 @@
 		0A1000000000000000000001 /* LlamaFramework in Frameworks */ = {isa = PBXBuildFile; productRef = 0A6000000000000000000001 /* LlamaFramework */; };
 		0A1000000000000000000002 /* Jinja in Frameworks */ = {isa = PBXBuildFile; productRef = 0A6000000000000000000002 /* Jinja */; };
 		0A1000000000000000000003 /* OrderedCollections in Frameworks */ = {isa = PBXBuildFile; productRef = 0A6000000000000000000003 /* OrderedCollections */; };
+		0B1000000000000000000002 /* OMNIAWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0B4000000000000000000002 /* OMNIAWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -20,7 +21,28 @@
 			remoteGlobalIDString = 0A3000000000000000000001;
 			remoteInfo = OMNIA;
 		};
+		0B1100000000000000000002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0A2000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0B3000000000000000000002;
+			remoteInfo = OMNIAWidgets;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		0B1200000000000000000001 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				0B1000000000000000000002 /* OMNIAWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		0A4000000000000000000001 /* OMNIA.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OMNIA.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -29,6 +51,8 @@
 		0A4000000000000000000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		0A4000000000000000000005 /* OMNIA.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OMNIA.entitlements; sourceTree = "<group>"; };
 		0A4000000000000000000006 /* ExportOptions.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = ExportOptions.plist; sourceTree = "<group>"; };
+		0B4000000000000000000002 /* OMNIAWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OMNIAWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		0B4000000000000000000005 /* OMNIAWidgets-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "OMNIAWidgets-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -40,6 +64,16 @@
 		0A5000000000000000000002 /* OMNIATests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = OMNIATests;
+			sourceTree = "<group>";
+		};
+		0B5000000000000000000002 /* OMNIAWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = OMNIAWidgets;
+			sourceTree = "<group>";
+		};
+		0B5000000000000000000003 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -62,6 +96,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0B7000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -70,6 +111,8 @@
 			children = (
 				0A5000000000000000000001 /* OMNIA */,
 				0A5000000000000000000002 /* OMNIATests */,
+				0B5000000000000000000002 /* OMNIAWidgets */,
+				0B5000000000000000000003 /* Shared */,
 				0A8000000000000000000003 /* Config */,
 				0A8000000000000000000002 /* Products */,
 			);
@@ -80,6 +123,7 @@
 			children = (
 				0A4000000000000000000001 /* OMNIA.app */,
 				0A4000000000000000000002 /* OMNIATests.xctest */,
+				0B4000000000000000000002 /* OMNIAWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -91,6 +135,7 @@
 				0A4000000000000000000004 /* Info.plist */,
 				0A4000000000000000000005 /* OMNIA.entitlements */,
 				0A4000000000000000000006 /* ExportOptions.plist */,
+				0B4000000000000000000005 /* OMNIAWidgets-Info.plist */,
 			);
 			path = Config;
 			sourceTree = "<group>";
@@ -105,13 +150,16 @@
 				0A9000000000000000000001 /* Sources */,
 				0A7000000000000000000001 /* Frameworks */,
 				0AA000000000000000000001 /* Resources */,
+				0B1200000000000000000001 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				0BC000000000000000000002 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				0A5000000000000000000001 /* OMNIA */,
+				0B5000000000000000000003 /* Shared */,
 			);
 			name = OMNIA;
 			packageProductDependencies = (
@@ -146,6 +194,29 @@
 			productReference = 0A4000000000000000000002 /* OMNIATests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		0B3000000000000000000002 /* OMNIAWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0BB000000000000000000002 /* Build configuration list for PBXNativeTarget "OMNIAWidgets" */;
+			buildPhases = (
+				0B9000000000000000000002 /* Sources */,
+				0B7000000000000000000002 /* Frameworks */,
+				0BA000000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				0B5000000000000000000002 /* OMNIAWidgets */,
+				0B5000000000000000000003 /* Shared */,
+			);
+			name = OMNIAWidgets;
+			packageProductDependencies = (
+			);
+			productName = OMNIAWidgets;
+			productReference = 0B4000000000000000000002 /* OMNIAWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -162,6 +233,9 @@
 					0A3000000000000000000002 = {
 						CreatedOnToolsVersion = 26.0;
 						TestTargetID = 0A3000000000000000000001;
+					};
+					0B3000000000000000000002 = {
+						CreatedOnToolsVersion = 26.0;
 					};
 				};
 			};
@@ -186,6 +260,7 @@
 			targets = (
 				0A3000000000000000000001 /* OMNIA */,
 				0A3000000000000000000002 /* OMNIATests */,
+				0B3000000000000000000002 /* OMNIAWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -199,6 +274,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		0AA000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0BA000000000000000000002 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -222,6 +304,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0B9000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -229,6 +318,11 @@
 			isa = PBXTargetDependency;
 			target = 0A3000000000000000000001 /* OMNIA */;
 			targetProxy = 0A1100000000000000000001 /* PBXContainerItemProxy */;
+		};
+		0BC000000000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0B3000000000000000000002 /* OMNIAWidgets */;
+			targetProxy = 0B1100000000000000000002 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -466,6 +560,60 @@
 			};
 			name = Release;
 		};
+		0BE000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 0A4000000000000000000003 /* Signing.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/OMNIAWidgets-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = OMNIA;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OMNIA_BUNDLE_ID_PREFIX).omnia.widgets";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		0BE000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 0A4000000000000000000003 /* Signing.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/OMNIAWidgets-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = OMNIA;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OMNIA_BUNDLE_ID_PREFIX).omnia.widgets";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -492,6 +640,15 @@
 			buildConfigurations = (
 				0AE000000000000000000005 /* Debug */,
 				0AE000000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0BB000000000000000000002 /* Build configuration list for PBXNativeTarget "OMNIAWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0BE000000000000000000003 /* Debug */,
+				0BE000000000000000000004 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

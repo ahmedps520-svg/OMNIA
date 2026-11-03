@@ -13,6 +13,7 @@ final class AppServices {
     let connectivity: ConnectivityMonitor
     let store: ModelStore
     let downloads: DownloadManager
+    let downloadActivities: DownloadActivities
     let importer: ModelImporter
     let engine: InferenceEngine
     let container: ModelContainer
@@ -25,6 +26,7 @@ final class AppServices {
     let dictation: DictationService
     let chat: ChatService
     let compare: CompareService
+    let navigator = AppNavigator()
 
     private var started = false
 
@@ -37,6 +39,7 @@ final class AppServices {
         container = PersistenceSchema.makeContainer()
         semanticIndex = SemanticIndex(container: container)
         downloads = DownloadManager(store: store, semanticIndex: semanticIndex, settings: settings)
+        downloadActivities = DownloadActivities(downloads: downloads)
         importer = ModelImporter(store: store)
         engine = InferenceEngine(store: store, settings: settings, device: device, monitor: monitor)
         python = PythonRuntime(settings: settings)
@@ -69,6 +72,12 @@ final class AppServices {
         }
     }
 
+    /// Starts a chat from outside the windows (Siri, Shortcuts) and shows it.
+    func startChat(_ text: String, attachments: [AttachmentRecord] = []) {
+        guard let conversation = chat.send(text, attachments: attachments, in: nil, modelID: nil) else { return }
+        navigator.show(conversation.id)
+    }
+
     /// The Hugging Face client honours Offline-only mode at the moment of use.
     var huggingFace: HuggingFaceClient { HuggingFaceClient(offlineOnly: settings.offlineOnly) }
 
@@ -79,6 +88,7 @@ final class AppServices {
         started = true
         monitor.start()
         connectivity.start()
+        downloadActivities.start()
         store.reconcile()
         store.refreshSystemModels()
         if PersistenceSchema.loadError == nil {

@@ -13,6 +13,10 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>OMNIA recognizes your dictation on this device. Nothing you say leaves it.</string>
 
+	<!-- Model downloads show on the Lock Screen and in the Dynamic Island (OMNIAWidgets). -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+
 	<!-- Reading a reply aloud goes on with the screen locked. -->
 	<key>UIBackgroundModes</key>
 	<array>
