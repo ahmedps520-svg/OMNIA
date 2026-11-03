@@ -42,7 +42,9 @@ final class DownloadActivities {
     private func sync() {
         let items = downloads.items
         var shown = Set<String>()
-        for activity in Activity<ModelDownloadAttributes>.activities {
+        // Ended activities stay listed until dismissed; a finished one keeps showing for a while.
+        for activity in Activity<ModelDownloadAttributes>.activities
+        where activity.activityState == .active || activity.activityState == .stale {
             let id = activity.attributes.downloadID
             shown.insert(id)
             if let item = items[id] {

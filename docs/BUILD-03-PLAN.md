@@ -108,11 +108,22 @@ Done:
 - **Multiple windows:** open any chat in its own window (Stage Manager, Split View).
 - **Device report:** a one-tap export of measured memory limits, load results and speeds, with no conversation content. Used to tune model fitting for your exact devices.
 
+Done:
+- `OMNIACommands` puts every shortcut in the iPadOS menu bar and the ⌘ overlay. ⌘1–⌘6 cover all six sections, and ⌥⌘N opens a new window. ⌘K opens a searchable model switcher; Return picks the first match. Commands reach the window in front through focused scene values.
+- One `WindowGroup(for: UUID.self)`: a plain window starts at Home, and a window opened from a conversation's context menu shows that conversation full width. Opening it again brings that window forward.
+- Performance → Export Device Report shares `OMNIA Device Report.json`. It is made when shared and contains the device, the measured memory limit (footprint plus `os_proc_available_memory`), each model's last load and benchmark, and median speeds from recorded replies.
+- Tests check the built Info.plist (multiple scenes, microphone, background audio) and the report's medians.
+
 ## Stage 10: Share sheet, Shortcuts, Lock Screen
 
 - **Share extension:** "OMNIA" appears in the share sheet for text, links, images and PDFs, with an optional question. The item opens in a new chat the next time you open OMNIA. Apple doesn't let share extensions launch their app.
 - **Shortcuts and Siri:** "Ask OMNIA" and "Summarize with OMNIA" actions, which can also appear in the share sheet.
 - **Live Activity:** model download progress on the Lock Screen and in the Dynamic Island.
+
+Done:
+- `AskOMNIAIntent` and `SummarizeIntent` (text, or a PDF, text or code file) open OMNIA and start the chat. `AppNavigator` shows it in the window that handles the request first. `OMNIAShortcuts` adds the Siri phrases.
+- `OMNIAWidgets` is a WidgetKit extension target added to the project by hand: synchronized folders `OMNIAWidgets/` and `Shared/`, bundle ID `…omnia.widgets`, automatic signing, no capabilities. `DownloadActivities` mirrors `DownloadManager.items` into ActivityKit. A new download starts an activity, progress updates at most every 5 seconds, a phase change updates at once, and finishing or failing ends it 15 minutes later. A suspended download shows as stale after a minute, until the background wake-up for verification catches it up.
+- Share extension: waits on a one-time App Group registration in the developer portal. API-key signing can't create App Groups.
 
 ## Stage 11: Release
 

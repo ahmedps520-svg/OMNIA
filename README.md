@@ -90,6 +90,8 @@ OMNIA/
     Performance/  Measured CPU, memory, GPU allocation, thermal and power state
     Network/      Hugging Face client, connectivity
   UI/             SwiftUI: Home, Chat, Models, Compare, Library, Performance, Settings, Onboarding
+OMNIAWidgets/     WidgetKit extension: model download Live Activities
+Shared/           Code compiled into the app and its extensions
 OMNIATests/       Unit tests (Swift Testing)
 Packages/         llama.cpp XCFramework package
 Config/           Info.plist, entitlements, signing, export options
@@ -105,6 +107,10 @@ scripts/          Archive, icon rendering, catalog regeneration
 **Workspace.** A panel beside each conversation (a sheet on iPhone) collects its code blocks. Web pages and SVG render with their console (an HTML page gets the CSS and scripts from the same reply), Markdown and JSON render natively, and JavaScript and Python run in a Web Worker inside WebKit's sandbox, with no network and a time limit. Python is Pyodide 314.0.7, an optional 13.5 MB download pinned by SHA-256 and served to WebKit offline. The panel also has a browser. The model gets the same sandbox as a `run_code` tool and, when a conversation allows web access (off by default, never in Offline-only mode), `web_search` (DuckDuckGo) and `open_url`, which read pages in a separate offscreen web view; every page it read can be opened in the browser.
 
 **Voice.** The composer's microphone dictates with iOS 26's SpeechAnalyzer, entirely on device: SpeechTranscriber where the hardware supports it, DictationTranscriber otherwise, with the words appearing as they're recognized and the audio never stored. iOS downloads the speech model the first time a language is used. Replies can be read aloud, by tap or automatically, in the best installed voice for the reply's language (or the Spoken Content voice set in Accessibility); headings and lists get pauses, links are read by their text, web addresses by their site, and code blocks and equations are skipped. Reading continues with the screen locked.
+
+**iPad.** Every command is in the menu bar with a shortcut: ⌘N new chat, ⌥⌘N new window, ⌘K switch model, ⌘. stop, ⌘F search conversations, ⌘1–⌘6 sections, ⌘, settings. Any conversation opens in its own window from its context menu. Performance exports a device report (JSON): measured memory limit, model loads, benchmarks and median speeds, with no conversation content.
+
+**Shortcuts and Lock Screen.** "Ask OMNIA" and "Summarize with OMNIA" (text, or a PDF, text or code file) work in Siri, Shortcuts and Spotlight and open the new chat. Model downloads show on the Lock Screen and in the Dynamic Island through a small WidgetKit extension.
 
 **Chat templates.** Newer models (Gemma 4, the Qwen3.5 family, gpt-oss, Granite 4.2, LFM3) need their exact Jinja templates. OMNIA renders the template stored in the GGUF with swift-jinja, as `llama-server --jinja` does, falling back to llama.cpp's built-in templates and then ChatML. Reasoning switches (`enable_thinking`, `reasoning_effort`, `reasoning_strength`) are exposed per conversation and per model, and reasoning is shown in a collapsible section for `<think>`, Gemma 4 thought channels, gpt-oss Harmony channels and Muse Glimmer messages.
 
