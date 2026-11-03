@@ -126,10 +126,16 @@ struct SettingsView: View {
                 Toggle("Keep models loaded in background", isOn: $settings.keepModelsLoadedInBackground)
                 Toggle("Reload model when returning", isOn: $settings.restoreModelOnForeground)
                 Toggle("Thermal protection", isOn: $settings.thermalProtection)
+                if BackgroundAnswer.isSupported {
+                    Toggle("Keep answering in the background", isOn: $settings.answerInBackground)
+                }
             } header: {
                 Text("Memory & Performance")
             } footer: {
-                Text("\(engine.profile.summary) Background apps get far less memory, so releasing models when OMNIA leaves the screen prevents iOS from terminating it.")
+                let background: String = BackgroundAnswer.isSupported
+                    ? " On this iPad a reply can keep generating after you switch apps; iOS shows its progress and a button to stop it."
+                    : ""
+                Text("\(engine.profile.summary) Background apps get far less memory, so releasing models when OMNIA leaves the screen prevents iOS from terminating it.\(background)")
             }
 
             // MARK: Storage

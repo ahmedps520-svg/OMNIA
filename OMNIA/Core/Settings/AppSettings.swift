@@ -200,6 +200,8 @@ final class AppSettings {
     /// Minutes of inactivity before loaded models are released. 0 disables.
     var idleUnloadMinutes: Int { didSet { save(idleUnloadMinutes, "idleUnloadMinutes") } }
     var keepModelsLoadedInBackground: Bool { didSet { save(keepModelsLoadedInBackground, "keepModelsLoadedInBackground") } }
+    /// On iPads with background GPU access, a reply keeps generating when OMNIA leaves the screen.
+    var answerInBackground: Bool { didSet { save(answerInBackground, "answerInBackground") } }
     var restoreModelOnForeground: Bool { didSet { save(restoreModelOnForeground, "restoreModelOnForeground") } }
     var thermalProtection: Bool { didSet { save(thermalProtection, "thermalProtection") } }
 
@@ -242,6 +244,7 @@ final class AppSettings {
         profilePreference = ProfilePreference(rawValue: defaults.string(forKey: "profilePreference") ?? "") ?? .automatic
         idleUnloadMinutes = defaults.object(forKey: "idleUnloadMinutes") as? Int ?? -1
         keepModelsLoadedInBackground = defaults.object(forKey: "keepModelsLoadedInBackground") as? Bool ?? false
+        answerInBackground = defaults.object(forKey: "answerInBackground") as? Bool ?? true
         restoreModelOnForeground = defaults.object(forKey: "restoreModelOnForeground") as? Bool ?? true
         thermalProtection = defaults.object(forKey: "thermalProtection") as? Bool ?? true
 

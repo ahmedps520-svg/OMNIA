@@ -48,6 +48,9 @@ final class InferenceEngine {
 
     @ObservationIgnored private var activeBackend: (any InferenceBackend)?
     @ObservationIgnored private var activeMemoryURL: URL?
+    @ObservationIgnored private var inBackground = false
+    /// In the background with a reply still generating there: releasing models waits for it.
+    @ObservationIgnored private var backgroundDeferred = false
 
     typealias BackendLoader = @Sendable (_ model: InstalledModel, _ file: URL, _ configuration: RuntimeConfiguration,
                                          _ progress: @escaping @Sendable (Double) -> Void) async throws -> any InferenceBackend
@@ -320,6 +323,12 @@ final class InferenceEngine {
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
+                    // A Metal command buffer that failed (iOS took the GPU away, for one) leaves
+                    // llama.cpp's GPU context failing every step until it's recreated: reload the
+                    // model for the next reply.
+                    if let failure = error as? InferenceError, case .decodeFailed = failure {
+                        await self?.unload(model.id)
+                    }
                 }
                 self?.finishGeneration()
             }
@@ -453,7 +462,25 @@ final class InferenceEngine {
         }
     }
 
-    func sceneDidEnterBackground() {
+    /// `keepGenerating`: a continued processing task holds the GPU (iPad), so the reply in progress
+    /// goes on; the usual background steps wait until it ends (`backgroundGenerationEnded`).
+    func sceneDidEnterBackground(keepGenerating: Bool = false) {
+        inBackground = true
+        if keepGenerating {
+            backgroundDeferred = true
+            return
+        }
+        enterBackground()
+    }
+
+    /// A reply generated in the background has ended and its task has given back the GPU.
+    func backgroundGenerationEnded() {
+        guard inBackground, backgroundDeferred else { return }
+        backgroundDeferred = false
+        enterBackground()
+    }
+
+    private func enterBackground() {
         // GPU work is not permitted in the background: stop cleanly before iOS rejects it.
         activeBackend?.interrupt(.background)
         guard !loaded.isEmpty, !settings.keepModelsLoadedInBackground else { return }
@@ -475,6 +502,8 @@ final class InferenceEngine {
     }
 
     func sceneWillEnterForeground() {
+        inBackground = false
+        backgroundDeferred = false
         backgroundUnloadWork?.cancel()
         backgroundUnloadWork = nil
         endBackgroundTask()

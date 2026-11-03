@@ -18,6 +18,13 @@ struct AppConfigurationTests {
         #expect((info["UIBackgroundModes"] as? [String])?.contains("audio") == true)
     }
 
+    @Test func allowsRepliesToGenerateInTheBackground() throws {
+        let bundleID = try #require(Bundle.main.bundleIdentifier)
+        let permitted = info["BGTaskSchedulerPermittedIdentifiers"] as? [String] ?? []
+        // The build setting is expanded, and the pattern matches what BackgroundAnswer submits.
+        #expect(permitted.contains("\(bundleID).\(BackgroundAnswer.identifierContext).*"))
+    }
+
     @Test func reportsMedianSpeeds() throws {
         func sample(_ speed: Double, prompt: Int = 100, context: Int = 4096) -> DeviceReport.Speeds.Sample {
             DeviceReport.Speeds.Sample(tokensPerSecond: speed, promptTokensPerSecond: speed * 10,

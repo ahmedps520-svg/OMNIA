@@ -112,7 +112,8 @@ Done:
 - `OMNIACommands` puts every shortcut in the iPadOS menu bar and the ⌘ overlay. ⌘1–⌘6 cover all six sections, and ⌥⌘N opens a new window. ⌘K opens a searchable model switcher; Return picks the first match. Commands reach the window in front through focused scene values.
 - One `WindowGroup(for: UUID.self)`: a plain window starts at Home, and a window opened from a conversation's context menu shows that conversation full width. Opening it again brings that window forward.
 - Performance → Export Device Report shares `OMNIA Device Report.json`. It is made when shared and contains the device, the measured memory limit (footprint plus `os_proc_available_memory`), each model's last load and benchmark, and median speeds from recorded replies.
-- Tests check the built Info.plist (multiple scenes, microphone, background audio) and the report's medians.
+- Tests check the built Info.plist (multiple scenes, microphone, background audio, background task identifiers) and the report's medians.
+- `BackgroundAnswer` submits a `BGContinuedProcessingTask` that requires the GPU. It is submitted synchronously when a reply starts, since iOS only grants it in response to a tap. It is offered on devices where `BGTaskScheduler.supportedResources` contains `.gpu`: Apple says M3-or-later iPads, no iPhone. Progress is 100 units for reading the prompt, then one per token, and the subtitle changes at most once a second. When iOS or the user stops it, the reply stops first and the task completes within 2 seconds. While a task holds the GPU, `InferenceEngine` doesn't interrupt the reply on backgrounding, and releasing models waits until the reply ends. A failed `llama_decode` reloads the model, since ggml-metal keeps failing after a lost command buffer. Entitlement `com.apple.developer.background-tasks.continued-processing.gpu`; identifiers `$(PRODUCT_BUNDLE_IDENTIFIER).generation.*`.
 
 ## Stage 10: Share sheet, Shortcuts, Lock Screen
 
@@ -123,7 +124,7 @@ Done:
 Done:
 - `AskOMNIAIntent` and `SummarizeIntent` (text, or a PDF, text or code file) open OMNIA and start the chat. `AppNavigator` shows it in the window that handles the request first. `OMNIAShortcuts` adds the Siri phrases.
 - `OMNIAWidgets` is a WidgetKit extension target added to the project by hand: synchronized folders `OMNIAWidgets/` and `Shared/`, bundle ID `…omnia.widgets`, automatic signing, no capabilities. `DownloadActivities` mirrors `DownloadManager.items` into ActivityKit. A new download starts an activity, progress updates at most every 5 seconds, a phase change updates at once, and finishing or failing ends it 15 minutes later. A suspended download shows as stale after a minute, until the background wake-up for verification catches it up.
-- Share extension: waits on a one-time App Group registration in the developer portal. API-key signing can't create App Groups.
+- Share extension: skipped. It needs an App Group registered by hand in the developer portal, since API-key signing can't create one. The Summarize with OMNIA shortcut can be added to the share sheet from the Shortcuts app instead.
 
 ## Stage 11: Release
 

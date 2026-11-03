@@ -275,7 +275,7 @@ enum InferenceError: LocalizedError {
         case .templateFailed:
             "The model's chat template couldn't be applied."
         case .decodeFailed(let code):
-            "Inference failed (llama_decode returned \(code))."
+            "Inference failed (llama_decode returned \(code)). The model reloads for your next message; tap Continue to try again."
         case let .promptTooLong(tokens, context):
             "The prompt needs \(tokens) tokens but the context window holds \(context). Increase the context length or start a new conversation."
         case .backgroundExecution:

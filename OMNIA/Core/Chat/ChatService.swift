@@ -52,6 +52,11 @@ final class ChatService {
     /// Called with each reply that finished on its own (not stopped or failed); reads it aloud
     /// when that's turned on.
     @ObservationIgnored var onReplyCompleted: ((Message) -> Void)?
+    /// The task letting the reply in progress generate in the background (iPad).
+    @ObservationIgnored private var backgroundAnswer: BackgroundAnswer?
+
+    /// The reply in progress may go on generating while OMNIA is in the background.
+    var holdsBackgroundGPU: Bool { backgroundAnswer?.holdsGPU ?? false }
 
     private let engine: InferenceEngine
     private let store: ModelStore
@@ -227,6 +232,14 @@ final class ChatService {
         lastParse = .distantPast
         lastPersist = .now
         let conversationID = conversation.id
+        // On iPads with background GPU access the reply goes on if OMNIA leaves the screen. iOS only
+        // grants this in response to a tap, so it's asked for here, before anything is awaited.
+        if settings.answerInBackground, !model.isSystem {
+            backgroundAnswer = BackgroundAnswer.begin(title: "Writing a reply", modelName: model.displayName,
+                                                      maxTokens: settings.generation.maxOutputTokens) { [weak self] in
+                self?.stop()
+            }
+        }
         // With documents attached and an embedding model installed, the question is also matched
         // by meaning: its vector is computed first (shown as "Preparing").
         let question = conversation.orderedMessages.last { $0.role == .user && $0.id != reply.id }?.content ?? ""
@@ -235,6 +248,7 @@ final class ChatService {
             let queryVector = await index?.queryVector(question)
             guard let self else { return }
             guard let conversation = self.fetchConversation(conversationID) else {
+                self.endBackgroundAnswer(success: false)
                 self.live = nil
                 self.generationTask = nil
                 return
@@ -281,6 +295,7 @@ final class ChatService {
                      conversationID: UUID, reply: Message, prefix: String) async {
         var request = request
         var combined: GenerationStats?
+        var succeeded = false
         do {
             for round in 0..<Self.maxToolRounds {
                 if round == Self.maxToolRounds - 1 { request.tools = [] }
@@ -295,9 +310,11 @@ final class ChatService {
                         format = prompt.toolCallFormat
                     case .promptProgress(let progress):
                         live?.promptProgress = progress
+                        backgroundAnswer?.readPrompt(progress)
                     case .text(let text):
                         live?.raw += text
                         live?.chunks += 1
+                        backgroundAnswer?.wrote(live?.chunks ?? 0)
                         if live?.firstTokenAt == nil { live?.firstTokenAt = .now }
                         if Date().timeIntervalSince(lastParse) > 0.066 { reparse() }
                         if Date().timeIntervalSince(lastPersist) > 4 { persistPartial(reply, prefix: prefix, conversationID: conversationID) }
@@ -313,7 +330,9 @@ final class ChatService {
                       let current = live,
                       let parsed = ToolCallParser.parse(Self.toolText(current, format: format), format: format,
                                                         tools: request.tools) else {
-                    finalize(reply, stats: combined ?? stats, prefix: prefix, conversationID: conversationID)
+                    let ended = combined ?? stats
+                    finalize(reply, stats: ended, prefix: prefix, conversationID: conversationID)
+                    succeeded = ended.stopReason == .endOfSequence || ended.stopReason == .maxTokens
                     break
                 }
 
@@ -346,8 +365,17 @@ final class ChatService {
                 fail(reply, in: conversation, error: error)
             }
         }
+        endBackgroundAnswer(success: succeeded)
         live = nil
         generationTask = nil
+    }
+
+    /// Gives the GPU back to iOS once the reply has stopped generating.
+    private func endBackgroundAnswer(success: Bool) {
+        guard let answer = backgroundAnswer else { return }
+        backgroundAnswer = nil
+        answer.finish(success: success)
+        engine.backgroundGenerationEnded()
     }
 
     /// Where a model's tool calls appear. Harmony (gpt-oss) and Muse Glimmer write them as separate

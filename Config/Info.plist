@@ -17,6 +17,13 @@
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 
+	<!-- Replies that keep generating in the background on iPad (BackgroundAnswer): each one
+	     submits "<bundle ID>.generation.<its own suffix>". -->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).generation.*</string>
+	</array>
+
 	<!-- Reading a reply aloud goes on with the screen locked. -->
 	<key>UIBackgroundModes</key>
 	<array>

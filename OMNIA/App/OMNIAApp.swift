@@ -40,7 +40,7 @@ struct OMNIAApp: App {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .background:
-                services.engine.sceneDidEnterBackground()
+                services.engine.sceneDidEnterBackground(keepGenerating: services.chat.holdsBackgroundGPU)
                 // Reading aloud goes on with the screen locked; listening doesn't.
                 Task { await services.dictation.stop() }
             case .active:
