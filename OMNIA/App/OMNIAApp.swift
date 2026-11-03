@@ -22,6 +22,8 @@ struct OMNIAApp: App {
                 .environment(services.compare)
                 .environment(services.semanticIndex)
                 .environment(services.python)
+                .environment(services.speech)
+                .environment(services.dictation)
                 .modelContainer(services.container)
                 .onOpenURL { url in
                     guard url.isFileURL else { return }
@@ -30,7 +32,10 @@ struct OMNIAApp: App {
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
-            case .background: services.engine.sceneDidEnterBackground()
+            case .background:
+                services.engine.sceneDidEnterBackground()
+                // Reading aloud goes on with the screen locked; listening doesn't.
+                Task { await services.dictation.stop() }
             case .active:
                 services.engine.sceneWillEnterForeground()
                 services.store.refreshSystemModels()

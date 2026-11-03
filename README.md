@@ -83,6 +83,9 @@ OMNIA/
     Models/       Catalog, recommendations, model store, background downloads, Files import
     Chat/         Conversations, comparison, export
     Documents/    Text extraction (text, code, Markdown, PDF, RTF), image preparation, on-device retrieval
+    Tools/        Tools the model can call: calculator, date, documents, code, web
+    Workspace/    WebKit sandbox for previews and running code, Pyodide runtime
+    Voice/        On-device dictation (SpeechAnalyzer) and reading replies aloud
     Persistence/  SwiftData schema and seed content
     Performance/  Measured CPU, memory, GPU allocation, thermal and power state
     Network/      Hugging Face client, connectivity
@@ -100,6 +103,8 @@ scripts/          Archive, icon rendering, catalog regeneration
 **Search by meaning.** The library can index documents with an optional embedding model (EmbeddingGemma 2, 310 MB, SHA-256 verified). Each passage's vector is stored with its document (half precision), and every question attached to a conversation's documents is ranked by both keywords (BM25) and meaning, merged by reciprocal rank fusion, so a passage that answers in other words or another language is found too. The model loads on demand, is released after 90 seconds idle, and pauses in the background; without it, search uses keywords as before.
 
 **Workspace.** A panel beside each conversation (a sheet on iPhone) collects its code blocks. Web pages and SVG render with their console (an HTML page gets the CSS and scripts from the same reply), Markdown and JSON render natively, and JavaScript and Python run in a Web Worker inside WebKit's sandbox, with no network and a time limit. Python is Pyodide 314.0.7, an optional 13.5 MB download pinned by SHA-256 and served to WebKit offline. The panel also has a browser. The model gets the same sandbox as a `run_code` tool and, when a conversation allows web access (off by default, never in Offline-only mode), `web_search` (DuckDuckGo) and `open_url`, which read pages in a separate offscreen web view; every page it read can be opened in the browser.
+
+**Voice.** The composer's microphone dictates with iOS 26's SpeechAnalyzer, entirely on device: SpeechTranscriber where the hardware supports it, DictationTranscriber otherwise, with the words appearing as they're recognized and the audio never stored. iOS downloads the speech model the first time a language is used. Replies can be read aloud, by tap or automatically, in the best installed voice for the reply's language (or the Spoken Content voice set in Accessibility); headings and lists get pauses, links are read by their text, web addresses by their site, and code blocks and equations are skipped. Reading continues with the screen locked.
 
 **Chat templates.** Newer models (Gemma 4, the Qwen3.5 family, gpt-oss, Granite 4.2, LFM3) need their exact Jinja templates. OMNIA renders the template stored in the GGUF with swift-jinja, as `llama-server --jinja` does, falling back to llama.cpp's built-in templates and then ChatML. Reasoning switches (`enable_thinking`, `reasoning_effort`, `reasoning_strength`) are exposed per conversation and per model, and reasoning is shown in a collapsible section for `<think>`, Gemma 4 thought channels, gpt-oss Harmony channels and Muse Glimmer messages.
 
@@ -146,6 +151,7 @@ Downloads use a background `URLSession` and can be paused, resumed (across relau
 ## Privacy
 
 - Inference never uses the network. Conversations, documents and settings stay in the app's sandbox (SwiftData, no CloudKit).
+- Dictation is recognized on device, and the microphone audio is neither stored nor sent anywhere.
 - The only network traffic is model search and downloads from Hugging Face, which you initiate. **Offline-only mode** blocks even that.
 - No accounts, no API keys, no analytics, no telemetry. `PrivacyInfo.xcprivacy` declares no data collection.
 

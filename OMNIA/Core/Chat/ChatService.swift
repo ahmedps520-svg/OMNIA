@@ -49,6 +49,9 @@ final class ChatService {
     @ObservationIgnored private var lastPersist = Date.distantPast
     /// Set by Stop: no further tool rounds start after the current step.
     @ObservationIgnored private var stopRequested = false
+    /// Called with each reply that finished on its own (not stopped or failed); reads it aloud
+    /// when that's turned on.
+    @ObservationIgnored var onReplyCompleted: ((Message) -> Void)?
 
     private let engine: InferenceEngine
     private let store: ModelStore
@@ -414,6 +417,9 @@ final class ChatService {
             context.insert(InferenceRecord(stats: stats, kind: .chat))
         }
         save()
+        if reply.state == .complete {
+            onReplyCompleted?(reply)
+        }
     }
 
     private func fail(_ reply: Message, in conversation: Conversation, error: Error) {

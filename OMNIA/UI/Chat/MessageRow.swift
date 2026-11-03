@@ -137,10 +137,12 @@ struct AssistantMessageView: View {
 
     @Environment(AppSettings.self) private var settings
     @Environment(InferenceEngine.self) private var engine
+    @Environment(SpeechPlayer.self) private var speech
     @State private var showDetails = false
     @State private var copied = false
 
     private var isStreaming: Bool { live != nil }
+    private var isReading: Bool { speech.speakingID == message.id }
     private var content: String { live?.displayContent ?? message.content }
     private var reasoning: String? {
         guard let live else { return message.reasoning }
@@ -207,6 +209,15 @@ struct AssistantMessageView: View {
                 Task {
                     try? await Task.sleep(for: .seconds(1.5))
                     copied = false
+                }
+            }
+            if !message.content.isEmpty {
+                iconButton(isReading ? "stop.circle" : "speaker.wave.2", label: isReading ? "Stop Reading" : "Read Aloud") {
+                    if isReading {
+                        speech.stop()
+                    } else {
+                        Task { await speech.speak(message.content, id: message.id) }
+                    }
                 }
             }
             if actions.canMutate {

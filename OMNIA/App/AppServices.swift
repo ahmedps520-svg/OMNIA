@@ -21,6 +21,8 @@ final class AppServices {
     let codeRunner: CodeRunner
     let webReader: WebReader
     let browser: BrowserSession
+    let speech: SpeechPlayer
+    let dictation: DictationService
     let chat: ChatService
     let compare: CompareService
 
@@ -41,6 +43,11 @@ final class AppServices {
         codeRunner = CodeRunner(python: python)
         webReader = WebReader(settings: settings)
         browser = BrowserSession(settings: settings)
+        let speech = SpeechPlayer()
+        let dictation = DictationService(player: speech)
+        speech.dictation = dictation
+        self.speech = speech
+        self.dictation = dictation
         chat = ChatService(engine: engine, store: store, settings: settings, container: container, semanticIndex: semanticIndex,
                            codeRunner: codeRunner, webReader: webReader)
         compare = CompareService(engine: engine, store: store, settings: settings, container: container)
@@ -49,6 +56,11 @@ final class AppServices {
             guard let self else { return }
             if self.settings.defaultModelID == nil { self.settings.defaultModelID = model.id }
             self.engine.post("arrow.down.circle", "\(model.displayName) is downloaded, verified and ready offline.")
+        }
+        chat.onReplyCompleted = { [weak self] reply in
+            guard let self, self.settings.readRepliesAloud else { return }
+            let content = reply.content, id = reply.id
+            Task { await self.speech.speak(content, id: id) }
         }
         downloads.onProjectorInstalled = { [weak self] models in
             guard let self, let first = models.first else { return }

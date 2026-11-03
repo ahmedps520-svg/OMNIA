@@ -8,6 +8,17 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 
+	<key>NSMicrophoneUsageDescription</key>
+	<string>OMNIA turns what you say into text for your message. Speech is recognized on this device and the audio is never stored or sent anywhere.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>OMNIA recognizes your dictation on this device. Nothing you say leaves it.</string>
+
+	<!-- Reading a reply aloud goes on with the screen locked. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

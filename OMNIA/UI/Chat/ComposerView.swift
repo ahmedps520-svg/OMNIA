@@ -18,9 +18,26 @@ struct ComposerView: View {
 
     @FocusState private var focused: Bool
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(DictationService.self) private var dictation
+    @State private var composerID = UUID()
+
+    private var isDictating: Bool { dictation.isDictating(for: composerID) }
 
     var body: some View {
         VStack(spacing: 8) {
+            if isDictating, let download = dictation.modelDownload {
+                HStack(spacing: 10) {
+                    Text("Downloading the speech model…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ProgressView(download)
+                        .frame(maxWidth: 140)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .glassEffect(.regular, in: .capsule)
+            }
+
             if !attachments.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -56,15 +73,17 @@ struct ComposerView: View {
                 .accessibilityLabel("Attach")
                 .help("Attach photos, screenshots, text, code or PDF files")
 
-                TextField(placeholder, text: $text, axis: .vertical)
+                TextField(isDictating ? "Listening…" : placeholder, text: $text, axis: .vertical)
                     .lineLimit(1...8)
                     .focused($focused)
                     .padding(.vertical, 7)
                     .submitLabel(.send)
+                    // Dictation writes the text while it listens.
+                    .disabled(isDictating)
                     .onKeyPress(.return, phases: .down) { press in
                         // Return sends on hardware keyboards; Shift-Return inserts a new line.
                         if press.modifiers.contains(.shift) { return .ignored }
-                        if canSend { onSend() }
+                        if canSend { send() }
                         return .handled
                     }
 
@@ -73,8 +92,10 @@ struct ComposerView: View {
                         .padding(.bottom, 9)
                 }
 
+                DictationButton(text: $text, owner: composerID)
+
                 Button {
-                    isGenerating ? onStop() : onSend()
+                    isGenerating ? onStop() : send()
                 } label: {
                     Image(systemName: isGenerating ? "stop.fill" : "arrow.up")
                         .font(.system(size: 15, weight: .bold))
@@ -98,6 +119,15 @@ struct ComposerView: View {
         .padding(.top, 6)
         .frame(maxWidth: 860)
         .frame(maxWidth: .infinity)
+    }
+
+    private func send() {
+        guard isDictating else { return onSend() }
+        // Sends once the last words are recognized.
+        Task {
+            await dictation.stop()
+            onSend()
+        }
     }
 
     private func remove(_ attachment: AttachmentRecord) {

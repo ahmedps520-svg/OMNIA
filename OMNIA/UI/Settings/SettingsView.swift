@@ -97,6 +97,15 @@ struct SettingsView: View {
                 Text("With web access the model can search the web (DuckDuckGo) and read pages; each conversation can turn it on or off, and it's always off in Offline-only mode. Python (Pyodide \(PythonRuntime.version), Mozilla Public License 2.0) runs code from the workspace and the model offline, with the standard library and no network access.")
             }
 
+            // MARK: Voice
+            Section {
+                Toggle("Read replies aloud", isOn: $settings.readRepliesAloud)
+            } header: {
+                Text("Voice")
+            } footer: {
+                Text("Reads each finished reply aloud, skipping code, in the best voice installed for its language. Higher-quality voices can be downloaded in Settings › Accessibility › Spoken Content › Voices. Dictation and speech stay on this device.")
+            }
+
             // MARK: Memory & performance
             Section {
                 Picker("Optimization profile", selection: $settings.profilePreference) {

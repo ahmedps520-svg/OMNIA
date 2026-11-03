@@ -89,6 +89,12 @@ Tests: code extraction and previews, web helpers, JavaScript runs (output, error
 - **Dictation:** a microphone button in the composer, with live on-device transcription.
 - **Read aloud:** reads a reply aloud, with optional automatic reading. Markdown and code are cleaned up for speech.
 
+Done:
+- `DictationService` (one microphone, so one composer in any window dictates at a time) runs SpeechAnalyzer with SpeechTranscriber, or DictationTranscriber on hardware without it. Microphone buffers are converted to the analyzer's format, the speech model downloads on first use with progress in the composer, and calls, alarms and audio route changes end dictation, keeping what was recognized. Dictation stops when the app goes to the background.
+- `SpeechPlayer` reads with AVSpeechSynthesizer in the best installed voice for the reply's detected language. Dictation and reading never overlap. The `audio` background mode keeps reading with the screen locked.
+- `SpeechText` turns Markdown into speakable text. Tests cover it, the voice choice and how dictation joins a draft.
+- Device checks: dictation into an empty and a non-empty draft, sending while dictating, the first-use model download, a phone call during dictation, reading aloud with the screen locked, and automatic reading.
+
 ## Stage 9: iPad power features
 
 - **Background answers (iPad):** an answer keeps generating after you switch apps. This uses iPadOS 26's continued processing with background GPU access, with progress shown by the system. iPhone keeps the current behavior: it pauses and offers Continue.

@@ -190,6 +190,10 @@ final class AppSettings {
     /// New conversations let the model search the web and read pages (off unless chosen).
     var webAccessByDefault: Bool { didSet { save(webAccessByDefault, "webAccessByDefault") } }
 
+    // Voice
+    /// Each finished reply is read aloud.
+    var readRepliesAloud: Bool { didSet { save(readRepliesAloud, "readRepliesAloud") } }
+
     // Memory & performance
     var memorySafety: MemorySafety { didSet { save(memorySafety.rawValue, "memorySafety") } }
     var profilePreference: ProfilePreference { didSet { save(profilePreference.rawValue, "profilePreference") } }
@@ -232,6 +236,7 @@ final class AppSettings {
         conversationMemoryLimitGB = defaults.object(forKey: "conversationMemoryLimitGB") as? Double ?? 4
         toolsEnabledByDefault = defaults.object(forKey: "toolsEnabledByDefault") as? Bool ?? true
         webAccessByDefault = defaults.object(forKey: "webAccessByDefault") as? Bool ?? false
+        readRepliesAloud = defaults.object(forKey: "readRepliesAloud") as? Bool ?? false
 
         memorySafety = MemorySafety(rawValue: defaults.string(forKey: "memorySafety") ?? "") ?? .balanced
         profilePreference = ProfilePreference(rawValue: defaults.string(forKey: "profilePreference") ?? "") ?? .automatic
