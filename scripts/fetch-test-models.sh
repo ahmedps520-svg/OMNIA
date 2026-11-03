@@ -8,6 +8,8 @@
 #   stories260K, stories15M  llama2.c TinyStories models (MIT), from llama.cpp's own test set
 #   bge-small                BAAI bge-small-en-v1.5 embedding model (MIT)
 #   SmolVLM-256M             HuggingFaceTB SmolVLM 256M Instruct + image encoder (Apache-2.0)
+#   Qwen3.5-0.8B (two)       Qwen3.5 0.8B, a hybrid (linear + full attention) model (Apache-2.0),
+#                            quantized by unsloth and by bartowski: a speculative-decoding pair
 #
 # Usage: scripts/fetch-test-models.sh <directory>
 set -euo pipefail
@@ -24,6 +26,8 @@ models=(
   "bge-small-f16.gguf f0b2fef971e8366438bfd2d9aefea1b0115919389448806d290237f638bae999 $hf/ggml-org/models-moved/resolve/main/bert-bge-small/ggml-model-f16.gguf"
   "SmolVLM-256M-Instruct-Q8_0.gguf 2a31195d3769c0b0fd0a4906201666108834848db768af11de1d2cef7cd35e65 $hf/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/main/SmolVLM-256M-Instruct-Q8_0.gguf"
   "mmproj-SmolVLM-256M-Instruct-Q8_0.gguf 7e943f7c53f0382a6fc41b6ee0c2def63ba4fded9ab8ed039cc9e2ab905e0edd $hf/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/main/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf"
+  "Qwen3.5-0.8B-Q4_0.gguf 444406ddd926550c724ec18d5120a9d40ded44908a063b0e66e9a7e5464c652c $hf/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_0.gguf"
+  "Qwen_Qwen3.5-0.8B-Q4_0.gguf 407c9dec5a813ebe4ed381e26b9b04f62b9041ea96f1a054ff9aa67c2fe46b36 $hf/bartowski/Qwen_Qwen3.5-0.8B-GGUF/resolve/main/Qwen_Qwen3.5-0.8B-Q4_0.gguf"
 )
 
 for entry in "${models[@]}"; do

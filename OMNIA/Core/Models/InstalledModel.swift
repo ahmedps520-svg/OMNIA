@@ -20,6 +20,10 @@ struct ModelSettings: Codable, Hashable, Sendable {
     var systemPrompt: String?
     /// For hybrid reasoning models (chat template has `enable_thinking`).
     var thinkingEnabled: Bool?
+    /// Speculative decoding: a smaller installed model with the same vocabulary, and how many
+    /// tokens it proposes per step.
+    var draftModelID: String?
+    var draftLength: Int?
 }
 
 /// A GGUF model stored on this device.

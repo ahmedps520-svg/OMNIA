@@ -359,6 +359,10 @@ struct GenerationDetailsSheet: View {
                     if let restored = stats.restoredPromptTokens {
                         LabeledValueRow(label: "Restored from saved memory", value: "\(restored)")
                     }
+                    if let acceptance = stats.draftAcceptance {
+                        LabeledValueRow(label: "Draft tokens accepted",
+                                        value: "\(stats.acceptedDraftTokens ?? 0) of \(stats.draftedTokens ?? 0) (\(ByteFormat.percent(acceptance)))")
+                    }
                     if let trimmed = stats.trimmedTurns {
                         LabeledValueRow(label: "Earlier turns trimmed", value: "\(trimmed)")
                     }

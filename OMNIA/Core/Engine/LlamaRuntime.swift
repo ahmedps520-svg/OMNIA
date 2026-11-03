@@ -34,6 +34,8 @@ final class LlamaRuntime: @unchecked Sendable {
     /// Recurrent and hybrid caches can't be trimmed back to a shared prefix, so a saved state
     /// would rarely be reusable; only attention-only models save conversation memory.
     private let canSaveState: Bool
+    /// A small model proposing tokens for speculative decoding, when one is attached.
+    private var draft: DraftModel?
 
     private let interruptState = OSAllocatedUnfairLock<InterruptReason?>(initialState: nil)
     private let pacingNanoseconds = OSAllocatedUnfairLock<UInt64>(initialState: 0)
@@ -213,6 +215,7 @@ final class LlamaRuntime: @unchecked Sendable {
         params.n_batch = UInt32(configuration.batchSize)
         params.n_ubatch = UInt32(min(configuration.microBatchSize, configuration.batchSize))
         params.n_seq_max = 1
+        params.n_rs_seq = UInt32(max(0, configuration.rollbackDepth))
         params.n_threads = Int32(configuration.threads)
         params.n_threads_batch = Int32(configuration.threads)
         if configuration.kvCacheType.requiresFlashAttention {
@@ -275,6 +278,8 @@ final class LlamaRuntime: @unchecked Sendable {
         guard !isClosed else { return }
         isClosed = true
         cachedTokens = []
+        draft?.close()
+        draft = nil
         llama_batch_free(batch)
         llama_free(context)
         llama_model_free(model)
@@ -282,6 +287,45 @@ final class LlamaRuntime: @unchecked Sendable {
 
     deinit {
         if !isClosed { freeResources() }
+    }
+
+    // MARK: Speculative decoding
+
+    /// Loads a draft model for speculative decoding: one with this model's vocabulary, able to
+    /// undo rejected tokens. A hybrid or recurrent model also needs `rollbackDepth` of at least
+    /// `length` in its own configuration.
+    func attachDraft(fileURL: URL, displayName: String, length: Int) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            queue.async {
+                do {
+                    guard !self.isClosed else { throw InferenceError.loadFailed("The model was unloaded.") }
+                    let needsRollback = llama_model_is_recurrent(self.model) || llama_model_is_hybrid(self.model)
+                    if needsRollback && llama_n_rs_seq(self.context) < UInt32(length) {
+                        throw DraftModel.Failure.noRollback
+                    }
+                    self.draft?.close()
+                    self.draft = nil
+                    let configuration = self.info.configuration
+                    self.draft = try DraftModel(fileURL: fileURL, displayName: displayName, length: length,
+                                                contextLength: configuration.contextLength,
+                                                threads: configuration.threads, gpuOffload: configuration.gpuOffload,
+                                                targetVocab: self.vocab)
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    func detachDraft() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            queue.async {
+                self.draft?.close()
+                self.draft = nil
+                continuation.resume()
+            }
+        }
     }
 
     /// Drops the reusable prompt cache (e.g. when switching conversations).
@@ -541,75 +585,24 @@ final class LlamaRuntime: @unchecked Sendable {
             throw constraint == nil ? InferenceError.loadFailed("Sampler unavailable.") : InferenceError.grammarFailed
         }
         defer { llama_sampler_free(sampler) }
-        var decoder = UTF8StreamDecoder()
-        var stopMatcher = StopSequenceMatcher(stopSequences(for: request, prompt: formatted))
-        var stoppedBySequence = false
-        var generated = 0
-        var firstTokenAt: ContinuousClock.Instant?
-        var stop = StopReason.maxTokens
-
-        while generated < request.maxTokens {
-            if let reason = currentInterrupt {
-                stop = reason == .user ? .cancelled : .interrupted
-                break
-            }
-            let token = llama_sampler_sample(sampler, context, -1)
-            if firstTokenAt == nil { firstTokenAt = .now }
-            if llama_vocab_is_eog(vocab, token) {
-                stop = .endOfSequence
-                break
-            }
-            let text = decoder.append(piece(for: token))
-            generated += 1
-            if !text.isEmpty {
-                let output = stopMatcher.feed(text)
-                if !output.text.isEmpty { continuation.yield(.text(output.text)) }
-                if output.stopped {
-                    stoppedBySequence = true
-                    stop = .endOfSequence
-                    break
-                }
-            }
-
-            if position >= contextLimit {
-                stop = .contextFull
-                break
-            }
-            batch.n_tokens = 0
-            LlamaRuntime.add(&batch, token: token, position: position, logits: true)
-            let status = llama_decode(context, batch)
-            if status != 0 {
-                clearMemory()
-                if currentInterrupt != nil {
-                    stop = .interrupted
-                    break
-                }
-                throw InferenceError.decodeFailed(status)
-            }
-            position += 1
-            cachedTokens.append(token)
-
-            let pause = pacingNanoseconds.withLock { $0 }
-            if pause > 0 { Thread.sleep(forTimeInterval: Double(pause) / 1_000_000_000) }
+        var output = TokenOutput(stopMatcher: StopSequenceMatcher(stopSequences(for: request, prompt: formatted)))
+        let emit: (String) -> Void = { continuation.yield(.text($0)) }
+        let draft = request.speculative ? self.draft : nil
+        if let draft {
+            try generateSpeculatively(with: draft, sampler: sampler, output: &output, position: &position,
+                                      maxTokens: request.maxTokens, contextLimit: contextLimit, emit: emit)
+        } else {
+            try generateOneByOne(sampler: sampler, output: &output, position: &position,
+                                 maxTokens: request.maxTokens, contextLimit: contextLimit, emit: emit)
         }
-
-        if !stoppedBySequence {
-            var remaining = ""
-            let tail = decoder.flush()
-            if !tail.isEmpty {
-                let output = stopMatcher.feed(tail)
-                remaining = output.text
-                stoppedBySequence = output.stopped
-            }
-            if !stoppedBySequence { remaining += stopMatcher.flush() }
-            if !remaining.isEmpty { continuation.yield(.text(remaining)) }
-        }
+        output.finish(emit: emit)
 
         let finished = ContinuousClock.now
         let promptSeconds = max((promptFinished - started).seconds, 1e-6)
-        let firstToken = firstTokenAt ?? finished
+        let firstToken = output.firstTokenAt ?? finished
         let decodeSeconds = max((finished - firstToken).seconds, 1e-6)
         let evaluatedPrompt = prompt.count - reused
+        let generated = output.generated
         var stats = GenerationStats(
             promptTokens: prompt.count,
             reusedPromptTokens: reused,
@@ -620,15 +613,213 @@ final class LlamaRuntime: @unchecked Sendable {
             totalDuration: (finished - started).seconds,
             contextUsed: position,
             contextSize: contextLimit,
-            stopReason: stop,
+            stopReason: output.stop,
             modelID: info.modelID,
             modelName: info.displayName
         )
         stats.trimmedTurns = formatted.trimmedTurns > 0 ? formatted.trimmedTurns : nil
         stats.restoredPromptTokens = restored > 0 ? restored : nil
+        if draft != nil {
+            stats.draftedTokens = output.drafted
+            stats.acceptedDraftTokens = output.accepted
+        }
         continuation.yield(.finished(stats))
         // Interrupted replies (background, memory pressure, heat, unload) leave nothing worth saving.
-        return stop != .interrupted && stop != .failed
+        return output.stop != .interrupted && output.stop != .failed
+    }
+
+    // MARK: Token loops
+
+    /// Turns sampled tokens into reply text: end of generation, UTF-8 assembly and stop sequences.
+    private struct TokenOutput {
+        var stopMatcher: StopSequenceMatcher
+        var decoder = UTF8StreamDecoder()
+        var generated = 0
+        var stop = StopReason.maxTokens
+        var stoppedBySequence = false
+        var firstTokenAt: ContinuousClock.Instant?
+        var drafted = 0
+        var accepted = 0
+
+        /// Takes one sampled token into the reply. Returns false when the reply ends with it.
+        mutating func accept(_ token: llama_token, from runtime: LlamaRuntime, emit: (String) -> Void) -> Bool {
+            if firstTokenAt == nil { firstTokenAt = .now }
+            if llama_vocab_is_eog(runtime.vocab, token) {
+                stop = .endOfSequence
+                return false
+            }
+            generated += 1
+            let text = decoder.append(runtime.piece(for: token))
+            guard !text.isEmpty else { return true }
+            let result = stopMatcher.feed(text)
+            if !result.text.isEmpty { emit(result.text) }
+            if result.stopped {
+                stoppedBySequence = true
+                stop = .endOfSequence
+                return false
+            }
+            return true
+        }
+
+        /// Emits the text still held back when the reply ends.
+        mutating func finish(emit: (String) -> Void) {
+            guard !stoppedBySequence else { return }
+            var remaining = ""
+            let tail = decoder.flush()
+            if !tail.isEmpty {
+                let result = stopMatcher.feed(tail)
+                remaining = result.text
+                stoppedBySequence = result.stopped
+            }
+            if !stoppedBySequence { remaining += stopMatcher.flush() }
+            if !remaining.isEmpty { emit(remaining) }
+        }
+    }
+
+    /// The usual loop: sample a token, decode it, repeat.
+    private func generateOneByOne(sampler: UnsafeMutablePointer<llama_sampler>, output: inout TokenOutput,
+                                  position: inout Int, maxTokens: Int, contextLimit: Int,
+                                  emit: (String) -> Void) throws {
+        while output.generated < maxTokens {
+            if let reason = currentInterrupt {
+                output.stop = reason == .user ? .cancelled : .interrupted
+                return
+            }
+            let token = llama_sampler_sample(sampler, context, -1)
+            guard output.accept(token, from: self, emit: emit) else { return }
+            if position >= contextLimit {
+                output.stop = .contextFull
+                return
+            }
+            batch.n_tokens = 0
+            LlamaRuntime.add(&batch, token: token, position: position, logits: true)
+            let status = llama_decode(context, batch)
+            if status != 0 {
+                clearMemory()
+                if currentInterrupt != nil {
+                    output.stop = .interrupted
+                    return
+                }
+                throw InferenceError.decodeFailed(status)
+            }
+            position += 1
+            cachedTokens.append(token)
+            pauseForPacing()
+        }
+    }
+
+    /// Speculative decoding: the draft proposes tokens, this model checks all of them in one batch,
+    /// keeps the ones it agrees with and adds one of its own. Every emitted token is this model's
+    /// own sample, drawn in order from its sampler, so the reply is the one it would write alone.
+    ///
+    /// Invariant at the top of each step: `next` was emitted but isn't in the cache yet, and the
+    /// cache holds exactly `cachedTokens`.
+    private func generateSpeculatively(with draft: DraftModel, sampler: UnsafeMutablePointer<llama_sampler>,
+                                       output: inout TokenOutput, position: inout Int, maxTokens: Int,
+                                       contextLimit: Int, emit: (String) -> Void) throws {
+        let memory = llama_get_memory(context)
+        var next = llama_sampler_sample(sampler, context, -1)
+        guard output.accept(next, from: self, emit: emit) else { return }
+
+        while output.generated < maxTokens {
+            if let reason = currentInterrupt {
+                output.stop = reason == .user ? .cancelled : .interrupted
+                return
+            }
+            guard position < contextLimit else {
+                output.stop = .contextFull
+                return
+            }
+            let count = min(draft.length, contextLimit - position - 1, maxTokens - output.generated, batchCapacity - 1)
+            var proposal: [llama_token] = []
+            if count > 0 {
+                do {
+                    try draft.sync(to: cachedTokens)
+                    proposal = try draft.propose(after: next, count: count)
+                } catch {
+                    // A failing draft never stops the reply: this step goes on without proposals.
+                    draft.reset()
+                }
+            }
+
+            batch.n_tokens = 0
+            LlamaRuntime.add(&batch, token: next, position: position, logits: true)
+            for (offset, token) in proposal.enumerated() {
+                LlamaRuntime.add(&batch, token: token, position: position + 1 + offset, logits: true)
+            }
+            let status = llama_decode(context, batch)
+            if status != 0 {
+                clearMemory()
+                draft.reset()
+                if currentInterrupt != nil {
+                    output.stop = .interrupted
+                    return
+                }
+                throw InferenceError.decodeFailed(status)
+            }
+            cachedTokens.append(next)
+            position += 1
+
+            // Sample every position in order, keeping drafts for as long as they match.
+            var agreed = 0
+            var ended = false
+            var correction: llama_token?
+            for index in 0...proposal.count {
+                let sampled = llama_sampler_sample(sampler, context, Int32(index))
+                if index < proposal.count, sampled == proposal[index] {
+                    guard output.generated < maxTokens, output.accept(sampled, from: self, emit: emit) else {
+                        ended = true
+                        break
+                    }
+                    agreed += 1
+                } else {
+                    correction = sampled
+                    break
+                }
+            }
+            output.drafted += proposal.count
+            output.accepted += agreed
+
+            // The cache holds `next` and the whole proposal: keep only what was accepted.
+            cachedTokens.append(contentsOf: proposal.prefix(agreed))
+            position += agreed
+            if agreed < proposal.count, !llama_memory_seq_rm(memory, 0, llama_pos(position), -1) {
+                try rebuildCache()
+            }
+            draft.keep(cachedTokens.count)
+            if ended { return }
+            guard let correction, output.generated < maxTokens else { return }
+            guard output.accept(correction, from: self, emit: emit) else { return }
+            next = correction
+            pauseForPacing()
+        }
+    }
+
+    /// Re-reads `cachedTokens` into a cleared cache: the fallback when rejected tokens can't be
+    /// removed in place.
+    private func rebuildCache() throws {
+        let tokens = cachedTokens
+        clearMemory()
+        var index = 0
+        while index < tokens.count {
+            let end = min(index + batchCapacity, tokens.count)
+            batch.n_tokens = 0
+            for position in index..<end {
+                LlamaRuntime.add(&batch, token: tokens[position], position: position, logits: position == tokens.count - 1)
+            }
+            let status = llama_decode(context, batch)
+            guard status == 0 else {
+                clearMemory()
+                throw InferenceError.decodeFailed(status)
+            }
+            cachedTokens.append(contentsOf: tokens[index..<end])
+            index = end
+        }
+    }
+
+    private func pauseForPacing() {
+        let pause = pacingNanoseconds.withLock { $0 }
+        if pause > 0 { Thread.sleep(forTimeInterval: Double(pause) / 1_000_000_000) }
     }
 
     // MARK: Stop sequences and grammars
@@ -789,7 +980,7 @@ final class LlamaRuntime: @unchecked Sendable {
         }
     }
 
-    private static func add(_ batch: inout llama_batch, token: llama_token, position: Int, logits: Bool) {
+    static func add(_ batch: inout llama_batch, token: llama_token, position: Int, logits: Bool) {
         let index = Int(batch.n_tokens)
         batch.token[index] = token
         batch.pos[index] = llama_pos(position)

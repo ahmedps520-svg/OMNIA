@@ -43,6 +43,8 @@ final class InferenceEngine {
     private(set) var isBenchmarking = false
     private(set) var notice: EngineNotice?
     private(set) var lastStats: GenerationStats?
+    /// Draft model attached to each loaded model (speculative decoding), by model ID.
+    private(set) var drafts: [String: String] = [:]
 
     @ObservationIgnored private var activeBackend: (any InferenceBackend)?
     @ObservationIgnored private var activeMemoryURL: URL?
@@ -153,7 +155,16 @@ final class InferenceEngine {
                 suggestion: "Choose a smaller quantization, or a model from the Recommended list for this device.")
         }
 
-        let configuration = RuntimeConfiguration(
+        // Speculative decoding: the chosen draft model joins only if it fits beside this one.
+        let draft = draftPlan(for: model, loadPlan: loadPlan)
+        if let draft {
+            loadPlan.estimate.weights += draft.estimate.weights
+            loadPlan.estimate.kvCache += draft.estimate.kvCache
+            loadPlan.estimate.compute += draft.estimate.compute
+            loadPlan.estimate.overhead += draft.estimate.overhead
+        }
+
+        var configuration = RuntimeConfiguration(
             contextLength: loadPlan.contextLength,
             batchSize: profile.batchSize,
             microBatchSize: profile.microBatchSize,
@@ -162,6 +173,10 @@ final class InferenceEngine {
             kvCacheType: loadPlan.kvType,
             flashAttention: settings.flashAttention
         )
+        // Hybrid models undo rejected draft tokens from recurrent-state snapshots.
+        if let draft, model.facts.recurrentStateBytes > 0 {
+            configuration.rollbackDepth = draft.length + 1
+        }
         loadingModelID = model.id
         loadProgress = 0
         engineLog.info("Loading \(model.id, privacy: .public) ctx=\(loadPlan.contextLength) kv=\(loadPlan.kvType.rawValue, privacy: .public) est=\(loadPlan.estimate.total)")
@@ -191,6 +206,21 @@ final class InferenceEngine {
                 suggestion: "iOS left only \(ByteFormat.memory(remaining)) for OMNIA after loading, so the model was released. Try a shorter context or a smaller quantization.")
         }
 
+        if let draft, let runtime = entry.backend as? LlamaRuntime {
+            do {
+                try await runtime.attachDraft(fileURL: store.fileURL(for: draft.model),
+                                              displayName: draft.model.displayName, length: draft.length)
+                if let remaining = SystemMetrics.availableMemory(), remaining < profile.minimumHeadroomAfterLoad {
+                    await runtime.detachDraft()
+                    post("bolt.slash", "\(draft.model.displayName) was released to leave iOS enough memory, so replies won't use speculative decoding.")
+                } else {
+                    drafts[model.id] = draft.model.id
+                }
+            } catch {
+                post("bolt.slash", "Speculative decoding is off for \(model.displayName): \(error.localizedDescription)")
+            }
+        }
+
         loaded[model.id] = entry
         store.recordLoad(model.id, info: entry.info)
         store.markUsed(model.id)
@@ -200,7 +230,31 @@ final class InferenceEngine {
         return entry
     }
 
+    /// The draft model to load with `model`, when one is chosen, installed and fits in what this
+    /// model leaves free. Its estimate includes the rollback snapshots hybrid models need.
+    private func draftPlan(for model: InstalledModel, loadPlan: LoadPlan)
+        -> (model: InstalledModel, length: Int, estimate: MemoryEstimate)? {
+        guard let id = model.settings.draftModelID, id != model.id, let draft = store.model(id: id),
+              FileManager.default.fileExists(atPath: store.fileURL(for: draft).path(percentEncoded: false)) else {
+            return nil
+        }
+        let length = min(max(model.settings.draftLength ?? 6, 2), 16)
+        var estimate = MemoryPlanner.estimate(draft.facts, fileSize: draft.sizeBytes, context: loadPlan.contextLength,
+                                              kv: .f16, flashAttention: settings.flashAttention)
+        estimate.overhead += UInt64(length + 1) * (model.facts.recurrentStateBytes + draft.facts.recurrentStateBytes)
+        var allowance = currentBudget().allowance
+        for other in loaded.values where other.id != model.id {
+            allowance = allowance.reserving(other.plan.estimate)
+        }
+        guard allowance.reserving(loadPlan.estimate).admits(estimate) else {
+            post("bolt.slash", "\(draft.displayName) doesn't fit beside \(model.displayName), so replies won't use speculative decoding.")
+            return nil
+        }
+        return (draft, length, estimate)
+    }
+
     func unload(_ id: String) async {
+        drafts[id] = nil
         guard let entry = loaded.removeValue(forKey: id) else { return }
         if let active = activeBackend, active === entry.backend { entry.backend.interrupt(.unload) }
         await entry.backend.close()

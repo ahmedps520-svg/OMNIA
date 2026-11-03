@@ -177,6 +177,33 @@ struct InstalledModelDetailView: View {
                         Text("Off").tag(Bool?.some(false))
                     }
                 }
+                let draftCandidates = store.models.filter {
+                    $0.id != model.id && $0.sizeBytes < model.sizeBytes && abs($0.facts.vocabSize - model.facts.vocabSize) <= 128
+                }
+                if !draftCandidates.isEmpty || model.settings.draftModelID != nil {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker("Speed up with", selection: Binding(
+                            get: { model.settings.draftModelID },
+                            set: { value in store.updateSettings(for: model.id) { $0.draftModelID = value } })) {
+                            Text("Nothing").tag(String?.none)
+                            ForEach(draftCandidates) { Text($0.displayName).tag(String?.some($0.id)) }
+                        }
+                        if model.settings.draftModelID != nil {
+                            Stepper("Guess \(model.settings.draftLength ?? 6) tokens ahead", value: Binding(
+                                get: { model.settings.draftLength ?? 6 },
+                                set: { value in store.updateSettings(for: model.id) { $0.draftLength = value } }), in: 2...12)
+                        }
+                        Group {
+                            if let draftID = engine.drafts[model.id], let draft = store.model(id: draftID) {
+                                Text("Speculative decoding is on: \(draft.displayName) guesses ahead and \(model.displayName) checks its guesses in one pass. Replies are identical, only faster.")
+                            } else {
+                                Text("A smaller model with the same vocabulary guesses several tokens ahead; this model checks them in one pass, so replies come faster and stay exactly the same. Applies the next time the model loads.")
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
                 SamplingSlider(title: "Temperature", value: Binding(
                     get: { generation.temperature },
                     set: { value in store.updateSettings(for: model.id) { settings in
@@ -197,7 +224,7 @@ struct InstalledModelDetailView: View {
                         }
                 }
                 if engine.isLoaded(model.id) {
-                    Button("Reload to Apply Context Changes", systemImage: "arrow.clockwise") {
+                    Button("Reload to Apply Changes", systemImage: "arrow.clockwise") {
                         Task {
                             await engine.unload(model.id)
                             load(model)

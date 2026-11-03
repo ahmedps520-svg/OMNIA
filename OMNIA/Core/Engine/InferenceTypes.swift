@@ -53,6 +53,9 @@ struct RuntimeConfiguration: Hashable, Codable, Sendable {
     var gpuOffload: Bool
     var kvCacheType: KVCacheType
     var flashAttention: Bool
+    /// Recurrent-state snapshots kept so speculative decoding can undo rejected tokens on hybrid
+    /// models (llama.cpp `n_rs_seq`); 0 when not needed.
+    var rollbackDepth: Int = 0
 }
 
 struct SamplingParameters: Hashable, Codable, Sendable {
@@ -98,6 +101,8 @@ struct GenerationRequest: Sendable {
     var memoryKey: UUID?
     /// Where that memory lives for the loaded model and settings (filled in by the engine).
     var memory: ConversationMemoryRequest?
+    /// Use the attached draft model, if any (speculative decoding).
+    var speculative: Bool = true
 }
 
 /// The shape of a reply.
@@ -159,6 +164,15 @@ struct GenerationStats: Codable, Hashable, Sendable {
     var trimmedTurns: Int?
     /// Tokens restored from the conversation's saved memory instead of being re-read.
     var restoredPromptTokens: Int?
+    /// Speculative decoding: tokens the draft model proposed, and how many the model kept.
+    var draftedTokens: Int?
+    var acceptedDraftTokens: Int?
+
+    /// Share of drafted tokens the model kept.
+    var draftAcceptance: Double? {
+        guard let drafted = draftedTokens, drafted > 0, let accepted = acceptedDraftTokens else { return nil }
+        return Double(accepted) / Double(drafted)
+    }
 
     var contextUtilization: Double {
         contextSize > 0 ? Double(contextUsed) / Double(contextSize) : 0
