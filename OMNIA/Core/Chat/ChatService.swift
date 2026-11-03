@@ -444,9 +444,10 @@ final class ChatService {
             let descriptor = FetchDescriptor<KnowledgeDocument>(predicate: #Predicate { ids.contains($0.id) })
             let indexed = indexedChunks(of: (try? context.fetch(descriptor)) ?? [])
             if !indexed.chunks.isEmpty {
-                let index = semanticIndex
-                let embed: (@Sendable (String) async -> [Float]?)? = indexed.hasVectors && index != nil
-                    ? { query in await index?.queryVector(query) } : nil
+                var embed: (@Sendable (String) async -> [Float]?)?
+                if indexed.hasVectors, let index = semanticIndex {
+                    embed = { query in await index.queryVector(query) }
+                }
                 tools.append(DocumentSearchTool(indexed: indexed, embed: embed))
             }
         }

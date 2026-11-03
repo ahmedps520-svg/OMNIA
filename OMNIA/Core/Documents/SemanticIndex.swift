@@ -167,9 +167,13 @@ final class SemanticIndex {
                 MainActor.assumeIsolated { self?.resume() }
             },
             center.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { Task { await self?.releaseRuntime() } }
+                MainActor.assumeIsolated { self?.memoryWarning() }
             }
         ]
+    }
+
+    private func memoryWarning() {
+        Task { await releaseRuntime() }
     }
 
     var isReady: Bool { embedder != nil }
