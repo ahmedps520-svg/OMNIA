@@ -244,6 +244,8 @@ enum InferenceError: LocalizedError {
     case tokenizationFailed
     case templateFailed
     case decodeFailed(Int32)
+    /// The engine itself reported a failure (MLX losing the GPU, for one).
+    case engineFailed(String)
     case promptTooLong(tokens: Int, context: Int)
     case backgroundExecution
     case busy
@@ -276,6 +278,8 @@ enum InferenceError: LocalizedError {
             "The model's chat template couldn't be applied."
         case .decodeFailed(let code):
             "Inference failed (llama_decode returned \(code)). The model reloads for your next message; tap Continue to try again."
+        case .engineFailed(let message):
+            "The model stopped working (\(message)). It reloads for your next message; tap Continue to try again."
         case let .promptTooLong(tokens, context):
             "The prompt needs \(tokens) tokens but the context window holds \(context). Increase the context length or start a new conversation."
         case .backgroundExecution:
@@ -300,6 +304,17 @@ enum InferenceError: LocalizedError {
             "An attached image couldn't be read."
         case .imageFailed(let reason):
             "The image couldn't be processed. \(reason)"
+        }
+    }
+}
+
+extension InferenceError {
+    /// The engine's GPU state may be broken (a failed Metal command buffer): the model has to be
+    /// loaded again before its next reply.
+    var needsReload: Bool {
+        switch self {
+        case .decodeFailed, .engineFailed: true
+        default: false
         }
     }
 }

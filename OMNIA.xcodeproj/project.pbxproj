@@ -11,6 +11,10 @@
 		0A1000000000000000000002 /* Jinja in Frameworks */ = {isa = PBXBuildFile; productRef = 0A6000000000000000000002 /* Jinja */; };
 		0A1000000000000000000003 /* OrderedCollections in Frameworks */ = {isa = PBXBuildFile; productRef = 0A6000000000000000000003 /* OrderedCollections */; };
 		0B1000000000000000000002 /* OMNIAWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0B4000000000000000000002 /* OMNIAWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		0A1000000000000000000004 /* MLX in Frameworks */ = {isa = PBXBuildFile; productRef = 0A6000000000000000000004 /* MLX */; };
+		0A1000000000000000000005 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 0A6000000000000000000005 /* MLXLLM */; };
+		0A1000000000000000000006 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 0A6000000000000000000006 /* MLXLMCommon */; };
+		0A1000000000000000000007 /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = 0A6000000000000000000007 /* Tokenizers */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -86,6 +90,10 @@
 				0A1000000000000000000001 /* LlamaFramework in Frameworks */,
 				0A1000000000000000000002 /* Jinja in Frameworks */,
 				0A1000000000000000000003 /* OrderedCollections in Frameworks */,
+				0A1000000000000000000004 /* MLX in Frameworks */,
+				0A1000000000000000000005 /* MLXLLM in Frameworks */,
+				0A1000000000000000000006 /* MLXLMCommon in Frameworks */,
+				0A1000000000000000000007 /* Tokenizers in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -166,6 +174,10 @@
 				0A6000000000000000000001 /* LlamaFramework */,
 				0A6000000000000000000002 /* Jinja */,
 				0A6000000000000000000003 /* OrderedCollections */,
+				0A6000000000000000000004 /* MLX */,
+				0A6000000000000000000005 /* MLXLLM */,
+				0A6000000000000000000006 /* MLXLMCommon */,
+				0A6000000000000000000007 /* Tokenizers */,
 			);
 			productName = OMNIA;
 			productReference = 0A4000000000000000000001 /* OMNIA.app */;
@@ -252,6 +264,9 @@
 				0AD000000000000000000001 /* XCLocalSwiftPackageReference "Packages/LlamaFramework" */,
 				0AF000000000000000000001 /* XCRemoteSwiftPackageReference "swift-jinja" */,
 				0AF000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
+				0AF000000000000000000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
+				0AF000000000000000000004 /* XCRemoteSwiftPackageReference "mlx-swift" */,
+				0AF000000000000000000005 /* XCRemoteSwiftPackageReference "swift-transformers" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0A8000000000000000000002 /* Products */;
@@ -679,6 +694,30 @@
 				minimumVersion = 1.1.0;
 			};
 		};
+		0AF000000000000000000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
+			requirement = {
+				kind = exactVersion;
+				version = 3.32.3;
+			};
+		};
+		0AF000000000000000000004 /* XCRemoteSwiftPackageReference "mlx-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift";
+			requirement = {
+				kind = exactVersion;
+				version = 0.32.3;
+			};
+		};
+		0AF000000000000000000005 /* XCRemoteSwiftPackageReference "swift-transformers" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/huggingface/swift-transformers";
+			requirement = {
+				kind = exactVersion;
+				version = 1.4.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -695,6 +734,26 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0AF000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */;
 			productName = OrderedCollections;
+		};
+		0A6000000000000000000004 /* MLX */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0AF000000000000000000004 /* XCRemoteSwiftPackageReference "mlx-swift" */;
+			productName = MLX;
+		};
+		0A6000000000000000000005 /* MLXLLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0AF000000000000000000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLLM;
+		};
+		0A6000000000000000000006 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0AF000000000000000000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLMCommon;
+		};
+		0A6000000000000000000007 /* Tokenizers */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0AF000000000000000000005 /* XCRemoteSwiftPackageReference "swift-transformers" */;
+			productName = Tokenizers;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

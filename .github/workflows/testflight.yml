@@ -51,6 +51,13 @@ jobs:
           xcrun agvtool new-version -all "${{ github.run_number }}" || \
             sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = ${{ github.run_number }};/g" OMNIA.xcodeproj/project.pbxproj
 
+      # MLX compiles Metal shaders (see build.yml).
+      - name: Metal toolchain
+        run: |
+          if ! xcodebuild -showComponent MetalToolchain 2>/dev/null | grep -q "Status: installed"; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+
       - name: Archive
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}

@@ -11,7 +11,8 @@ on:
 jobs:
   build:
     runs-on: macos-26
-    timeout-minutes: 60
+    # MLX (C++ and Metal shaders) compiles twice: for devices and for the simulator.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -33,8 +34,22 @@ jobs:
         if: steps.llama.outputs.cache-hit != 'true'
         run: scripts/build-llama-xcframework.sh
 
+      # MLX compiles Metal shaders; the image installs the toolchain, but make sure. (-showComponent
+      # succeeds even when it is missing, so its status is read.)
+      - name: Metal toolchain
+        run: |
+          if ! xcodebuild -showComponent MetalToolchain 2>/dev/null | grep -q "Status: installed"; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+
       - name: Resolve packages
-        run: xcodebuild -resolvePackageDependencies -project OMNIA.xcodeproj -scheme OMNIA
+        run: |
+          xcodebuild -resolvePackageDependencies -project OMNIA.xcodeproj -scheme OMNIA
+          # The resolved versions, readable from the run page, so they can be pinned in the repository.
+          RESOLVED=OMNIA.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          if [ -f "$RESOLVED" ]; then
+            echo "::notice title=Package.resolved::$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])), separators=(",",":")))' "$RESOLVED")"
+          fi
 
       - name: Build for iOS devices (unsigned)
         run: |

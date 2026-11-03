@@ -22,7 +22,7 @@ struct MLXModelTests {
         ]
         let info = try MLXModelInspector.info(config: config, weightBytes: 1_800_000_000, chatTemplate: "{{ messages }}")
         #expect(info.modelType == "llama")
-        #expect(info.quantizationLabel == "4-bit")
+        #expect(info.quantizationLabel == "MLX 4-bit")
         // 8 KV heads × 64 dimensions × keys and values, in all 16 layers.
         #expect(info.facts.kvElementsFull == 16 * 8 * 64 * 2)
         #expect(info.facts.kvElementsSliding == 0)
@@ -61,7 +61,7 @@ struct MLXModelTests {
                                               chatTemplate: "{% if enable_thinking %}<think>{% endif %}")
         #expect(info.facts.kvElementsFull == 2 * 2 * 256 * 2)
         #expect(info.facts.recurrentStateBytes > 6 * 32 * 128 * 128 * 4)
-        #expect(info.quantizationLabel == "16-bit")
+        #expect(info.quantizationLabel == "MLX 16-bit")
         #expect(info.facts.thinkingToggle)
     }
 
@@ -84,6 +84,33 @@ struct MLXModelTests {
         #expect(info.facts.kvElementsFull == 4 * 2 * 512 * 2)
         #expect(info.facts.kvElementsSliding == 20 * 2 * 256 * 2)
         #expect(info.facts.slidingWindow == 512)
+    }
+
+    @Test func readsEndOfTextTokensFromBothConfigs() throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "mlx-eos-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data(#"{"model_type": "gemma4", "text_config": {"eos_token_id": 1}}"#.utf8).write(to: folder.appending(path: "config.json"))
+        try Data(#"{"eos_token_id": [1, 106, 50]}"#.utf8).write(to: folder.appending(path: "generation_config.json"))
+        #expect(Set(MLXRuntime.eosTokenIDs(in: folder)) == [1, 106, 50])
+    }
+
+    @Test func mapsThePlannedKVCacheToMLX() {
+        #expect(MLXRuntime.kvCacheConfiguration(.f16) == nil)
+        #expect(MLXRuntime.kvCacheConfiguration(.q8_0) != nil)
+        #expect(MLXRuntime.kvCacheConfiguration(.q4_0) != nil)
+    }
+
+    /// MLX can't run in the Simulator: loading says so instead of crashing.
+    @Test func explainsTheSimulatorCantRunMLX() async throws {
+        #if targetEnvironment(simulator)
+        let configuration = RuntimeConfiguration(contextLength: 4096, batchSize: 512, microBatchSize: 512, threads: 4,
+                                                 gpuOffload: true, kvCacheType: .f16, flashAttention: true)
+        await #expect(throws: MLXRuntime.Failure.self) {
+            _ = try await MLXRuntime.load(model: .appleFoundation, folder: FileManager.default.temporaryDirectory,
+                                          configuration: configuration) { _ in }
+        }
+        #endif
     }
 
     @Test func needsAChatTemplate() {

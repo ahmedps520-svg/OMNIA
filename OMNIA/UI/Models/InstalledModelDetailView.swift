@@ -46,7 +46,8 @@ struct InstalledModelDetailView: View {
                         } else {
                             memory(model)
                             modelSettings(model)
-                            imageSupport(model)
+                            // MLX models here are text only.
+                            if !model.isMLX { imageSupport(model) }
                             performance(model)
                             fileInfo(model)
                             Button("Delete Model", systemImage: "trash", role: .destructive) { showDelete = true }
@@ -202,8 +203,9 @@ struct InstalledModelDetailView: View {
                         Text("Off").tag(Bool?.some(false))
                     }
                 }
-                let draftCandidates = store.models.filter {
-                    !$0.isSystem && $0.id != model.id && $0.sizeBytes < model.sizeBytes
+                // Speculative decoding is llama.cpp's: an MLX model neither has nor is a draft.
+                let draftCandidates: [InstalledModel] = model.isMLX ? [] : store.models.filter {
+                    !$0.isSystem && !$0.isMLX && $0.id != model.id && $0.sizeBytes < model.sizeBytes
                         && abs($0.facts.vocabSize - model.facts.vocabSize) <= 128
                 }
                 if !draftCandidates.isEmpty || model.settings.draftModelID != nil {

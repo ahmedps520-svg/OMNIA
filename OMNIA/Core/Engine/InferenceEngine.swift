@@ -56,6 +56,9 @@ final class InferenceEngine {
                                          _ progress: @escaping @Sendable (Double) -> Void) async throws -> any InferenceBackend
     /// Creates the backend for a model: llama.cpp. Tests substitute scripted backends.
     @ObservationIgnored var loadBackend: BackendLoader = { model, file, configuration, progress in
+        if model.isMLX {
+            return try await MLXRuntime.load(model: model, folder: file, configuration: configuration, progress: progress)
+        }
         // The image encoder lives next to the model file (both in the Models directory).
         let projector = model.projector.map { file.deletingLastPathComponent().appending(path: $0.relativePath) }
         return try await LlamaRuntime.load(modelID: model.id, displayName: model.displayName, fileURL: file,
@@ -326,7 +329,7 @@ final class InferenceEngine {
                     // A Metal command buffer that failed (iOS took the GPU away, for one) leaves
                     // llama.cpp's GPU context failing every step until it's recreated: reload the
                     // model for the next reply.
-                    if let failure = error as? InferenceError, case .decodeFailed = failure {
+                    if let failure = error as? InferenceError, failure.needsReload {
                         await self?.unload(model.id)
                     }
                 }
@@ -471,6 +474,22 @@ final class InferenceEngine {
             return
         }
         enterBackground()
+    }
+
+    /// MLX ends the app if iOS takes the GPU away mid-step, so an MLX reply stops as soon as OMNIA
+    /// starts leaving the screen, unless a background task holds the GPU. (llama.cpp survives a
+    /// failed step, so it stops on entering the background.)
+    func sceneWillResignActive(keepGenerating: Bool) {
+        guard !keepGenerating, let active = activeBackend, active is MLXRuntime else { return }
+        active.interrupt(.background)
+        // A moment of background time for the step in flight to finish before iOS suspends OMNIA.
+        let task = UIApplication.shared.beginBackgroundTask(withName: "OMNIA.mlx-stop")
+        Task { @MainActor in
+            for _ in 0..<100 where self.live != nil {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            UIApplication.shared.endBackgroundTask(task)
+        }
     }
 
     /// A reply generated in the background has ended and its task has given back the GPU.
