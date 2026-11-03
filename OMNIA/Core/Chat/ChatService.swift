@@ -271,19 +271,21 @@ final class ChatService {
 
         let contextTokens = engine.loaded[model.id]?.info.configuration.contextLength
             ?? engine.plan(for: model).contextLength
+        // The conversation's tools. Continuing a cut-off reply only extends its text, so it gets no
+        // new tool rounds, but its system prompt still names them, as it did for the reply so far.
+        let offered = conversation.jsonMode || !toolsEnabled(for: conversation) ? [] : availableTools(for: conversation)
         let turns = buildTurns(for: conversation, excluding: reply, model: model, persona: persona,
-                               contextTokens: contextTokens, queryVector: queryVector)
+                               contextTokens: contextTokens, queryVector: queryVector,
+                               toolNames: offered.map { $0.definition.name })
         var request = GenerationRequest(turns: turns, assistantPrefix: prefix.isEmpty ? nil : prefix,
                                         sampling: SamplingParameters(generation), maxTokens: generation.maxOutputTokens)
         // JSON mode needs the reply to be the object itself, so reasoning is switched off.
         if model.facts.thinkingToggle {
             let reasoning = conversation.jsonMode ? ReasoningPreference.off : reasoningPreference(for: conversation, model: model)
-            request.templateVariables = reasoning.templateVariables
+            request.templateVariables = reasoning.templateVariables(effort: settings.reasoningEffort)
         }
         if conversation.jsonMode { request.responseFormat = .json }
-        // Continuing a cut-off reply only extends its text: no new tool rounds.
-        let tools = conversation.jsonMode || !prefix.isEmpty || !toolsEnabled(for: conversation)
-            ? [] : availableTools(for: conversation)
+        let tools = prefix.isEmpty ? offered : []
         request.tools = tools.map { $0.definition }
         request.memoryKey = conversation.id
         return (request, tools)
@@ -524,6 +526,20 @@ final class ChatService {
         return try? context.fetch(descriptor).first
     }
 
+    /// What a model is told when nobody wrote it a system prompt: where it runs, what OMNIA does with
+    /// its answers, and the tools it has. Without it, models don't know their tools or the workspace.
+    nonisolated static func defaultSystemPrompt(device: String, tools: [String], date: Date) -> String {
+        var parts = [
+            "You are OMNIA, a private assistant running entirely on the user's \(device). Today is \(date.formatted(date: .complete, time: .omitted)).",
+            "Answer directly. Think as much as the task needs, then commit to an answer instead of second-guessing settled points.",
+            "When you write code, a document or any file, give its complete content in one fenced code block tagged with its language (swift, html, markdown, python…). OMNIA's workspace shows every block: web pages, SVG and Markdown render live, and JavaScript and Python run on the device. Swift can't be built here, so give complete files the user can paste into Xcode or Swift Playgrounds."
+        ]
+        if !tools.isEmpty {
+            parts.append("You can call these tools: \(tools.joined(separator: ", ")). Use one whenever it makes the answer more reliable, for example run_code to check code or compute exactly, and say what you found. Never claim you have no tools.")
+        }
+        return parts.joined(separator: "\n\n")
+    }
+
     private func systemPrompt(for conversation: Conversation, model: InstalledModel, persona: Persona?) -> String {
         if let custom = conversation.systemPrompt?.trimmed, !custom.isEmpty { return custom }
         if let persona, !persona.systemPrompt.trimmed.isEmpty { return persona.systemPrompt }
@@ -532,13 +548,17 @@ final class ChatService {
     }
 
     private func buildTurns(for conversation: Conversation, excluding reply: Message, model: InstalledModel,
-                            persona: Persona?, contextTokens: Int, queryVector: [Float]? = nil) -> [ChatTurn] {
+                            persona: Persona?, contextTokens: Int, queryVector: [Float]? = nil,
+                            toolNames: [String] = []) -> [ChatTurn] {
         let history = conversation.orderedMessages.filter { $0.id != reply.id }
         let lastUserText = history.last(where: { $0.role == .user })?.content ?? ""
         // Roughly 3.5 characters per token; documents may use up to ~45% of the window.
         let documentBudget = Int(Double(contextTokens) * 3.5 * 0.45)
 
         var system = systemPrompt(for: conversation, model: model, persona: persona)
+        if system.isEmpty {
+            system = Self.defaultSystemPrompt(device: engine.device.isPad ? "iPad" : "iPhone", tools: toolNames, date: .now)
+        }
         if !conversation.documentIDs.isEmpty {
             let excerpts = knowledgeExcerpts(ids: conversation.documentIDs, query: lastUserText, queryVector: queryVector,
                                              budget: documentBudget / 2)

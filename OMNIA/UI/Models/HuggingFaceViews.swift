@@ -92,6 +92,8 @@ struct HuggingFaceRepoView: View {
     @State private var inspecting: Set<String> = []
     @State private var isLoading = true
     @State private var errorMessage: String?
+    /// The file whose larger-than-memory download is waiting for confirmation.
+    @State private var confirmingOversized: String?
 
     var body: some View {
         ScrollView {
@@ -154,9 +156,20 @@ struct HuggingFaceRepoView: View {
                             .buttonStyle(.glass)
                             .disabled(inspecting.contains(file.path))
                     }
-                    Button("Download") { download(file) }
-                        .buttonStyle(.glassProminent)
-                        .disabled(!canDownload(file))
+                    if exceedsMemory(file) && detail?.gated?.isGated != true {
+                        Button("Download Anyway") { confirmingOversized = file.path }
+                            .buttonStyle(.glass)
+                            .oversizedDownloadConfirmation(
+                                isPresented: Binding(get: { confirmingOversized == file.path },
+                                                     set: { if !$0 { confirmingOversized = nil } }),
+                                size: file.byteSize) {
+                                download(file, beyondMemoryLimit: true)
+                            }
+                    } else {
+                        Button("Download") { download(file) }
+                            .buttonStyle(.glassProminent)
+                            .disabled(!canDownload(file))
+                    }
                 }
             }
             .controlSize(.small)
@@ -189,6 +202,12 @@ struct HuggingFaceRepoView: View {
         return true
     }
 
+    /// The header was read and the model doesn't fit this device's memory budget.
+    private func exceedsMemory(_ file: HuggingFaceClient.TreeEntry) -> Bool {
+        if case .success(let value)? = assessments[file.path] { return !value.1.fits }
+        return false
+    }
+
     private func load() async {
         isLoading = true
         defer { isLoading = false }
@@ -218,8 +237,8 @@ struct HuggingFaceRepoView: View {
         }
     }
 
-    private func download(_ file: HuggingFaceClient.TreeEntry) {
-        let request = DownloadRequest(
+    private func download(_ file: HuggingFaceClient.TreeEntry, beyondMemoryLimit: Bool = false) {
+        var request = DownloadRequest(
             id: InstalledModel.makeID(repo: repo, fileName: file.fileName),
             repo: repo,
             path: file.path,
@@ -230,6 +249,7 @@ struct HuggingFaceRepoView: View {
             sha256: file.sha256,
             license: detail?.license,
             catalogID: nil)
+        if beyondMemoryLimit { request.ignoreMemoryLimit = true }
         do {
             try downloads.start(request)
             errorMessage = nil

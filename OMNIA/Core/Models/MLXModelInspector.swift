@@ -108,7 +108,7 @@ enum MLXModelInspector {
             slidingWindow: sliding > 0 ? window : 0,
             recurrentStateBytes: recurrent, embeddingLength: hidden, vocabSize: int("vocab_size") ?? 0,
             trainContext: int("max_position_embeddings") ?? 4096, parameters: parameters,
-            thinkingToggle: chatTemplate?.contains("enable_thinking") ?? false)
+            thinkingToggle: chatTemplate.map(ReasoningPreference.isSupported(by:)) ?? false)
         return MLXModelInfo(modelType: modelType, facts: facts, quantizationLabel: bits.map { "MLX \($0)-bit" } ?? "MLX 16-bit",
                             weightBytes: weightBytes)
     }

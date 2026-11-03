@@ -97,6 +97,15 @@ final class CompareService {
         self[keyPath: side].state = .preparing
         var request = GenerationRequest(turns: turns, sampling: SamplingParameters(generation.applying(model.settings.generation)),
                                         maxTokens: generation.maxOutputTokens)
+        // The model's own reasoning switch, at the effort chosen in Settings, as in a chat.
+        if model.facts.thinkingToggle {
+            let reasoning: ReasoningPreference = switch model.settings.thinkingEnabled {
+            case .some(true): .on
+            case .some(false): .off
+            case .none: .automatic
+            }
+            request.templateVariables = reasoning.templateVariables(effort: settings.reasoningEffort)
+        }
         // Comparisons start from a clean cache so prompt timings are fair.
         request.reusePromptCache = false
         do {

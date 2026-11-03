@@ -72,7 +72,7 @@ final class InferenceEngine {
 
     private let store: ModelStore
     private let settings: AppSettings
-    private let device: DeviceProfile
+    let device: DeviceProfile
     private let monitor: PerformanceMonitor
     /// Saved model memory of long conversations (see `ConversationMemoryStore`).
     let conversationMemory: ConversationMemoryStore
@@ -172,11 +172,21 @@ final class InferenceEngine {
                 if loadPlan.fits && !loadPlan.wasReduced { break }
             }
         }
-        guard loadPlan.fits else {
+        // The user may load a model larger than the budget anyway: with a short context, iOS decides.
+        let beyondLimit = !loadPlan.fits && model.settings.ignoreMemoryLimit == true
+        guard loadPlan.fits || beyondLimit else {
             let budget = currentBudget()
             throw InferenceError.insufficientMemory(
                 required: loadPlan.estimate.total, available: budget.usable,
-                suggestion: "Choose a smaller quantization, or a model from the Recommended list for this device.")
+                suggestion: "Choose a smaller quantization, or turn on Load Beyond the Memory Limit in the model's settings to try it anyway.")
+        }
+        if beyondLimit {
+            // The planner's requested context already respects the model's trained length.
+            loadPlan.contextLength = max(loadPlan.contextLength, min(Self.beyondLimitContext, loadPlan.requestedContext))
+            loadPlan.estimate = MemoryPlanner.estimate(model.facts, fileSize: model.sizeBytes + model.projectorReserve,
+                                                       context: loadPlan.contextLength, kv: loadPlan.kvType,
+                                                       microBatch: profile.microBatchSize, flashAttention: settings.flashAttention)
+            post("exclamationmark.triangle", "\(model.displayName) is larger than OMNIA's memory budget, so it loads with a \(ByteFormat.tokens(loadPlan.contextLength)) context. Replies may be slow, and iOS may close OMNIA if memory runs out.")
         }
 
         // Speculative decoding: the chosen draft model joins only if it fits beside this one.
@@ -221,8 +231,9 @@ final class InferenceEngine {
         let entry = try await task.value
 
         // Measured safety net: if iOS reports too little headroom left, undo the load now
-        // rather than risk the app being terminated during generation.
-        if let remaining = SystemMetrics.availableMemory(), remaining < profile.minimumHeadroomAfterLoad {
+        // rather than risk the app being terminated during generation. A model loaded beyond the
+        // limit has no headroom by definition: the user chose that risk.
+        if !beyondLimit, let remaining = SystemMetrics.availableMemory(), remaining < profile.minimumHeadroomAfterLoad {
             await entry.backend.close()
             engineLog.error("Load undone: only \(remaining) bytes of headroom left")
             throw InferenceError.insufficientMemory(
@@ -407,6 +418,10 @@ final class InferenceEngine {
     func resetPromptCache(for modelID: String) async {
         await loaded[modelID]?.backend.resetCache()
     }
+
+    /// Context for a model loaded beyond the memory limit: enough for a real exchange, and as
+    /// little extra memory as that allows.
+    static let beyondLimitContext = 4096
 
     /// The plan for a model built into the system: its fixed context and no memory of OMNIA's.
     static let systemPlan = LoadPlan(

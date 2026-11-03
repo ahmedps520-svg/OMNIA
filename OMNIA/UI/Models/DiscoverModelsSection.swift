@@ -20,9 +20,6 @@ struct DiscoverModelsSection: View {
         }
         let fitting = assessed.filter { $0.best != nil }.sorted { $0.model.qualityScore > $1.model.qualityScore }
         let tooLarge = assessed.filter { $0.best == nil }
-        let mlx = ModelCatalog.mlx.map { model in
-            (model: model, best: ModelCatalog.bestVariant(of: model, device: device, profile: profile, budget: budget))
-        }
 
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 12) {
@@ -63,20 +60,6 @@ struct DiscoverModelsSection: View {
                             CatalogModelRow(model: entry.model, best: entry.best)
                         }
                         .buttonStyle(.plain)
-                    }
-                }
-            }
-
-            if !mlx.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    SectionHeader("MLX (Beta)", subtitle: "Models for Apple's MLX engine: folders of safetensors from mlx-community. On M5 chips MLX reads prompts with the GPU's Neural Accelerators. Large files are checked against their published SHA-256.")
-                    LazyVStack(spacing: 10) {
-                        ForEach(mlx, id: \.model.id) { entry in
-                            NavigationLink(value: entry.model) {
-                                CatalogModelRow(model: entry.model, best: entry.best)
-                            }
-                            .buttonStyle(.plain)
-                        }
                     }
                 }
             }
@@ -156,10 +139,15 @@ struct DownloadButton: View {
     let model: CatalogModel
     let variant: CatalogVariant
     @Binding var errorMessage: String?
+    /// Larger than this device's memory budget: the download takes a confirmation, and the
+    /// installed model is allowed to load beyond the limit.
+    var exceedsMemory = false
 
     @Environment(DownloadManager.self) private var downloads
     @Environment(ModelStore.self) private var store
     @Environment(AppSettings.self) private var settings
+
+    @State private var confirming = false
 
     var body: some View {
         let request = model.downloadRequest(for: variant)
@@ -172,19 +160,50 @@ struct DownloadButton: View {
                 ProgressView(value: item.fraction).frame(width: 90)
                 Text(ByteFormat.percent(item.fraction)).font(.caption).monospacedDigit()
             }
+        } else if exceedsMemory {
+            Button {
+                confirming = true
+            } label: {
+                Label("Download Anyway", systemImage: "exclamationmark.triangle")
+            }
+            .buttonStyle(.glass)
+            .disabled(settings.offlineOnly)
+            .oversizedDownloadConfirmation(isPresented: $confirming, size: variant.sizeBytes) {
+                var oversized = request
+                oversized.ignoreMemoryLimit = true
+                start(oversized)
+            }
         } else {
             Button {
-                do {
-                    errorMessage = nil
-                    try downloads.start(request)
-                } catch {
-                    errorMessage = error.localizedDescription
-                }
+                start(request)
             } label: {
                 Label("Download \(ByteFormat.file(variant.sizeBytes))", systemImage: "arrow.down.circle")
             }
             .buttonStyle(.glassProminent)
             .disabled(settings.offlineOnly)
+        }
+    }
+
+    private func start(_ request: DownloadRequest) {
+        do {
+            errorMessage = nil
+            try downloads.start(request)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+extension View {
+    /// Asks before downloading a model larger than this device's memory budget, saying what
+    /// running it will be like.
+    @MainActor
+    func oversizedDownloadConfirmation(isPresented: Binding<Bool>, size: Int64, download: @escaping () -> Void) -> some View {
+        confirmationDialog("Larger than this device's memory", isPresented: isPresented, titleVisibility: .visible) {
+            Button("Download \(ByteFormat.file(size)) Anyway", action: download)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("OMNIA will load it with a short \(ByteFormat.tokens(InferenceEngine.beyondLimitContext)) context. Replies come slowly and use more battery, and iOS may close OMNIA if memory runs out. You can turn this off in the model's settings.")
         }
     }
 }

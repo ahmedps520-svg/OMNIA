@@ -149,6 +149,8 @@ struct InstalledModelDetailView: View {
         return VStack(alignment: .leading, spacing: 12) {
             SectionHeader("Memory", subtitle: plan.fits
                           ? "Planned for \(ByteFormat.tokens(plan.contextLength)) tokens with a \(plan.kvType.label) KV cache."
+                          : model.settings.ignoreMemoryLimit == true
+                          ? "Larger than OMNIA's memory budget: it loads beyond the limit with a \(ByteFormat.tokens(InferenceEngine.beyondLimitContext)) context."
                           : "Doesn't fit in the memory available right now.")
             VStack(alignment: .leading, spacing: 14) {
                 MemoryBreakdownBar(estimate: plan.estimate, capacity: budget.usable, accent: .accentColor)
@@ -201,6 +203,17 @@ struct InstalledModelDetailView: View {
                         Text("Model default").tag(Bool?.none)
                         Text("On").tag(Bool?.some(true))
                         Text("Off").tag(Bool?.some(false))
+                    }
+                }
+                // A model larger than the memory budget loads only when the user accepts the risk.
+                if !engine.plan(for: model).fits || model.settings.ignoreMemoryLimit == true {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Load beyond the memory limit", isOn: Binding(
+                            get: { model.settings.ignoreMemoryLimit ?? false },
+                            set: { value in store.updateSettings(for: model.id) { $0.ignoreMemoryLimit = value ? true : nil } }))
+                        Text("This model is larger than OMNIA's memory budget for this device. With this on it loads anyway, with a \(ByteFormat.tokens(InferenceEngine.beyondLimitContext)) context. Replies may be slow, and iOS may close OMNIA if memory runs out.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 // Speculative decoding is llama.cpp's: an MLX model neither has nor is a draft.

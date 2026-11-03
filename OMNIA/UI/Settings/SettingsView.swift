@@ -78,12 +78,15 @@ struct SettingsView: View {
                 Toggle("Reuse prompt cache between turns", isOn: $settings.reusePromptCache)
                 Toggle("Remember long chats", isOn: $settings.rememberLongChats)
                     .disabled(!settings.reusePromptCache)
+                Picker("Reasoning effort", selection: $settings.reasoningEffort) {
+                    ForEach(ReasoningEffort.allCases) { Text($0.title).tag($0) }
+                }
                 Toggle("Tools in new conversations", isOn: $settings.toolsEnabledByDefault)
                 Button("Restore Inference Defaults") { settings.resetGenerationDefaults() }
             } header: {
                 Text("Inference")
             } footer: {
-                Text("Context and KV cache changes apply the next time a model loads. Automatic picks the longest context and highest cache precision that fit in memory; quantized caches require flash attention. Remember long chats saves a long conversation's model memory, so reopening it continues instantly instead of re-reading it. Tools let models calculate exactly, check the date, run code in a sandbox and search attached documents.")
+                Text("Context and KV cache changes apply the next time a model loads. Automatic picks the longest context and highest cache precision that fit in memory; quantized caches require flash attention. Remember long chats saves a long conversation's model memory, so reopening it continues instantly instead of re-reading it. Tools let models calculate exactly, check the date, run code in a sandbox and search attached documents. Reasoning effort sets how long reasoning models think before answering: Balanced suits most questions, Thorough is slower and uses more battery.")
             }
 
             // MARK: Workspace

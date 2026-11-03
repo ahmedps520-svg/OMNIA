@@ -27,6 +27,8 @@ struct DownloadRequest: Codable, Hashable, Sendable {
     var files: [ModelFile]? = nil
     /// The repository commit to download from; nil means the latest.
     var revision: String? = nil
+    /// Downloaded although it's larger than the memory budget: it may load beyond the limit.
+    var ignoreMemoryLimit: Bool? = nil
 }
 
 /// One file of a model that is a folder.
@@ -468,6 +470,9 @@ final class DownloadManager: NSObject {
                         catalogID: request.catalogID, moveFile: true)
                     self.items[request.id]?.phase = .completed
                     self.saveState()
+                    if request.ignoreMemoryLimit == true {
+                        self.store.updateSettings(for: model.id) { $0.ignoreMemoryLimit = true }
+                    }
                     self.onInstalled?(model)
                 }
                 try? await Task.sleep(for: .seconds(4))
@@ -568,6 +573,9 @@ final class DownloadManager: NSObject {
                         catalogID: request.catalogID)
                     self.items[id]?.phase = .completed
                     self.saveState()
+                    if request.ignoreMemoryLimit == true {
+                        self.store.updateSettings(for: model.id) { $0.ignoreMemoryLimit = true }
+                    }
                     self.onInstalled?(model)
                 }
                 try? await Task.sleep(for: .seconds(4))

@@ -13,12 +13,13 @@ struct ModelsView: View {
     @Binding var selection: SidebarSelection?
 
     enum Tab: String, CaseIterable, Identifiable {
-        case installed, discover, huggingFace
+        case installed, discover, mlx, huggingFace
         var id: String { rawValue }
         var title: String {
             switch self {
             case .installed: "On Device"
             case .discover: "Recommended"
+            case .mlx: "MLX"
             case .huggingFace: "Hugging Face"
             }
         }
@@ -47,6 +48,7 @@ struct ModelsView: View {
                 switch tab {
                 case .installed: installed
                 case .discover: DiscoverModelsSection()
+                case .mlx: MLXModelsSection()
                 case .huggingFace: HuggingFaceSearchSection()
                 }
             }

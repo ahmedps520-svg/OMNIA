@@ -100,7 +100,7 @@ scripts/          Archive, icon rendering, catalog regeneration
 
 **Engine.** Each loaded model lives on its own serial queue. Weights are memory-mapped and fully offloaded to Metal; flash attention and an F16/Q8_0/Q4_0 KV cache are chosen per load. Prompts reuse the KV cache for the longest common prefix, so follow-up turns only process new tokens. Streaming is UTF-8 safe, generation stops cleanly on Stop, background, memory pressure or critical temperature, and every number shown (tokens per second, time to first token, context use) is measured.
 
-**MLX engine (beta).** A second engine runs MLX models with mlx-swift-lm 3.32.3 (mlx-swift 0.32.3, tokenizers from swift-transformers 1.4.0). MLX models are folders of safetensors from mlx-community: Gemma 4 E2B, E4B and 12B, Qwen3.5 4B and 9B, and Granite 4.2 3B. They download file by file from a pinned commit, and each file is checked against its published SHA-256. On M5 chips (iPadOS 26.2 and later) MLX reads prompts with the GPU's Neural Accelerators. Prompts go through OMNIA's own chat-template renderer, so tools, reasoning switches and Continue behave as they do on llama.cpp.
+**MLX engine (beta).** A second engine runs MLX models with mlx-swift-lm 3.32.3 (mlx-swift 0.32.3, tokenizers from swift-transformers 1.4.0). MLX models are folders of safetensors from mlx-community, listed in the Models screen's MLX tab: Gemma 4 E2B, E4B and 12B, Qwen3.5 4B and 9B, and Granite 4.2 3B. Once downloaded, they're picked in a chat like any other model. They download file by file from a pinned commit, and each file is checked against its published SHA-256. On M5 chips (iPadOS 26.2 and later) MLX reads prompts with the GPU's Neural Accelerators. Prompts go through OMNIA's own chat-template renderer, so tools, reasoning switches and Continue behave as they do on llama.cpp.
 
 **Photos and screenshots.** Vision models read images attached from Photos, Files or the clipboard. Their image encoder (an mmproj GGUF, verified by SHA-256 like the model) is an optional download per model, loaded with the first image through llama.cpp's multimodal library (`mtmd`). Images are stored once as upright sRGB JPEGs of at most 2048 pixels, without their metadata, and take up to 1,024 tokens each; an image already in the KV cache is recognised by its content and not read again. Models without image support are told an image was attached rather than shown nothing.
 
@@ -116,6 +116,10 @@ scripts/          Archive, icon rendering, catalog regeneration
 
 **Chat templates.** Newer models (Gemma 4, the Qwen3.5 family, gpt-oss, Granite 4.2, LFM3) need their exact Jinja templates. OMNIA renders the template stored in the GGUF with swift-jinja, as `llama-server --jinja` does, falling back to llama.cpp's built-in templates and then ChatML. Reasoning switches (`enable_thinking`, `reasoning_effort`, `reasoning_strength`) are exposed per conversation and per model, and reasoning is shown in a collapsible section for `<think>`, Gemma 4 thought channels, gpt-oss Harmony channels and Muse Glimmer messages.
 
+**Reasoning effort and reply length.** Settings › Inference sets how long reasoning models think: Light, Balanced (the default) or Thorough. Every template that takes a level gets it, so Qwen3.8 doesn't fall back to its own default, "xhigh", which second-guesses settled points at length. Replies may run to 8,192 tokens, room to reason and then answer; the 2,048-token limit saved by builds 01–04 is raised once on update, and a limit chosen after that stays.
+
+**Default system prompt.** A conversation with no system prompt of its own (from the chat, a persona or the model's settings) gets OMNIA's: the device and date, to commit to an answer rather than second-guess it, to write each file in full in one tagged code block for the workspace (Swift as complete files for Xcode or Swift Playgrounds, since it can't run here), and the names of the tools the model can call.
+
 ## How models are chosen and loaded
 
 OMNIA never rejects a model by parameter count. It reads the model's real file size and GGUF header, and estimates runtime memory per architecture:
@@ -130,6 +134,8 @@ That estimate must satisfy two limits measured at runtime:
 2. **App memory limit**: `os_proc_available_memory()` with the increased-limit entitlement. Developers report memory-mapped weights are not charged here; OMNIA still charges 10% of them as a margin.
 
 After loading, OMNIA re-measures. If iOS reports too little headroom left, it unloads immediately instead of risking termination. Under memory warnings it releases idle models; on critical pressure it stops and releases everything. Loaded models are released after an idle period and when the app moves to the background (GPU work isn't permitted there), then reloaded on return.
+
+**Beyond the limit.** A model that doesn't fit can still be used, at the user's risk. **Download Anyway** (on a catalog model's page, or after **Check Fit** on Hugging Face) asks first, and the model it installs has **Load beyond the memory limit** turned on; any installed model that doesn't fit offers the same switch on its page. Such a model loads alone with a 4K context and skips the headroom check, so replies are slow and iOS may close OMNIA if memory runs out.
 
 **Profiles.** *iPad · Maximum quality*: 32K default context, F16 cache when it fits (Q8_0/Q4_0 before shortening context), larger batches. *iPhone · Efficiency*: 8K default context, Q8_0 cache, a tighter memory share, faster idle release and token pacing when the device runs hot. Both can be overridden in Settings.
 

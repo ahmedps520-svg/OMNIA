@@ -120,7 +120,8 @@ struct GenerationSettings: Codable, Hashable {
     var minP: Double = 0.05
     var repetitionPenalty: Double = 1.05
     var repetitionLastN: Int = 128
-    var maxOutputTokens: Int = 2048
+    /// Reasoning counts toward it: a thinking model needs room to think and still answer in full.
+    var maxOutputTokens: Int = 8192
     var seed: UInt32? = nil
 
     static let `default` = GenerationSettings()
@@ -187,6 +188,8 @@ final class AppSettings {
     var conversationMemoryLimitGB: Double { didSet { save(conversationMemoryLimitGB, "conversationMemoryLimitGB") } }
     /// New conversations let the model use tools (calculator, date, documents…).
     var toolsEnabledByDefault: Bool { didSet { save(toolsEnabledByDefault, "toolsEnabledByDefault") } }
+    /// How long reasoning models think before answering, where their template takes a level.
+    var reasoningEffort: ReasoningEffort { didSet { save(reasoningEffort.rawValue, "reasoningEffort") } }
     /// New conversations let the model search the web and read pages (off unless chosen).
     var webAccessByDefault: Bool { didSet { save(webAccessByDefault, "webAccessByDefault") } }
 
@@ -224,7 +227,11 @@ final class AppSettings {
 
         defaultModelID = defaults.string(forKey: "defaultModelID")
         if let data = defaults.data(forKey: "generation"),
-           let decoded = try? JSONDecoder().decode(GenerationSettings.self, from: data) {
+           var decoded = try? JSONDecoder().decode(GenerationSettings.self, from: data) {
+            // Builds 01–04 capped replies at 2,048 tokens, too few for a reasoning model to finish.
+            if defaults.integer(forKey: Self.revisionKey) < 2, decoded.maxOutputTokens == 2048 {
+                decoded.maxOutputTokens = GenerationSettings.default.maxOutputTokens
+            }
             generation = decoded
         } else {
             generation = .default
@@ -237,6 +244,7 @@ final class AppSettings {
         rememberLongChats = defaults.object(forKey: "rememberLongChats") as? Bool ?? true
         conversationMemoryLimitGB = defaults.object(forKey: "conversationMemoryLimitGB") as? Double ?? 4
         toolsEnabledByDefault = defaults.object(forKey: "toolsEnabledByDefault") as? Bool ?? true
+        reasoningEffort = ReasoningEffort(rawValue: defaults.string(forKey: "reasoningEffort") ?? "") ?? .medium
         webAccessByDefault = defaults.object(forKey: "webAccessByDefault") as? Bool ?? false
         readRepliesAloud = defaults.object(forKey: "readRepliesAloud") as? Bool ?? false
 
@@ -251,7 +259,14 @@ final class AppSettings {
         offlineOnly = defaults.object(forKey: "offlineOnly") as? Bool ?? false
         allowCellularDownloads = defaults.object(forKey: "allowCellularDownloads") as? Bool ?? false
         hasCompletedOnboarding = defaults.object(forKey: "hasCompletedOnboarding") as? Bool ?? false
+        if defaults.integer(forKey: Self.revisionKey) < 2 {
+            saveCodable(generation, "generation")
+            defaults.set(2, forKey: Self.revisionKey)
+        }
     }
+
+    /// Settings migrations already applied; 2 is the longer reply limit.
+    static let revisionKey = "settingsRevision"
 
     func resetGenerationDefaults() {
         generation = .default
@@ -259,6 +274,7 @@ final class AppSettings {
         kvCache = .automatic
         flashAttention = true
         gpuAcceleration = true
+        reasoningEffort = .medium
     }
 
     private func save(_ value: Any?, _ key: String) {

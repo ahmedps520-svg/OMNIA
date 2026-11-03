@@ -93,10 +93,9 @@ struct CatalogModelDetailView: View {
                         }
                         Spacer(minLength: 8)
                         CompatibilityBadge(compatibility: assessment.compatibility)
-                        if assessment.compatibility.isUsable {
-                            DownloadButton(model: model, variant: variant, errorMessage: $errorMessage)
-                                .controlSize(.small)
-                        }
+                        DownloadButton(model: model, variant: variant, errorMessage: $errorMessage,
+                                       exceedsMemory: !assessment.compatibility.isUsable)
+                            .controlSize(.small)
                     }
                     .padding(12)
                     .background(selectedVariantID == variant.id ? Color.accentColor.opacity(0.07) : Color.clear,
@@ -134,7 +133,7 @@ struct CatalogModelDetailView: View {
                             .foregroundStyle(fits ? Theme.positive : Theme.critical)
                         Text(fits
                              ? "\(ByteFormat.memory(estimate.total)) of \(ByteFormat.memory(budget.usable)) — fits safely."
-                             : "\(ByteFormat.memory(estimate.total)) exceeds the \(ByteFormat.memory(budget.usable)) OMNIA allows on this device. Choose a shorter context or a smaller quantization.")
+                             : "\(ByteFormat.memory(estimate.total)) exceeds the \(ByteFormat.memory(budget.usable)) OMNIA allows on this device. Choose a shorter context or a smaller quantization, or download it anyway to run it slowly with a short context.")
                             .font(.footnote)
                     }
                 }

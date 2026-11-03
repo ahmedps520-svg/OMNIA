@@ -21,14 +21,38 @@ enum ReasoningPreference: String, CaseIterable, Identifiable, Codable, Sendable 
         }
     }
 
-    /// Template variables understood by current model families:
-    /// `enable_thinking` (Qwen3.5, Gemma 4, Granite 4.2, LFM), `reasoning_effort` (gpt-oss, Granite)
-    /// and `reasoning_strength` (Muse Glimmer).
-    var templateVariables: [String: TemplateValue] {
+    /// Template variables understood by current model families: `enable_thinking` (Qwen3.5,
+    /// Gemma 4, Granite 4.2, LFM), `reasoning_effort` (Qwen3.8, gpt-oss, Granite) and
+    /// `reasoning_strength` (Muse Glimmer). The effort is always given: left to themselves, some
+    /// templates pick their most thorough level (Qwen3.8's default is "xhigh").
+    func templateVariables(effort: ReasoningEffort) -> [String: TemplateValue] {
+        let level = TemplateValue.string(effort.rawValue)
         switch self {
-        case .automatic: [:]
-        case .off: ["enable_thinking": .bool(false), "reasoning_effort": .string("low"), "reasoning_strength": .string("low")]
-        case .on: ["enable_thinking": .bool(true), "reasoning_effort": .string("high"), "reasoning_strength": .string("high")]
+        case .automatic: return ["reasoning_effort": level, "reasoning_strength": level]
+        case .off: return ["enable_thinking": .bool(false), "reasoning_effort": .string("low"), "reasoning_strength": .string("low")]
+        case .on: return ["enable_thinking": .bool(true), "reasoning_effort": level, "reasoning_strength": level]
+        }
+    }
+
+    var templateVariables: [String: TemplateValue] { templateVariables(effort: .medium) }
+
+    /// The template reads at least one of those variables, so OMNIA can steer its reasoning.
+    static func isSupported(by template: String) -> Bool {
+        ["enable_thinking", "reasoning_effort", "reasoning_strength"].contains { template.contains($0) }
+    }
+}
+
+/// How long a reasoning model thinks before it answers, for templates that take a level.
+enum ReasoningEffort: String, CaseIterable, Identifiable, Codable, Sendable {
+    case low, medium, high
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .low: "Light"
+        case .medium: "Balanced"
+        case .high: "Thorough"
         }
     }
 }

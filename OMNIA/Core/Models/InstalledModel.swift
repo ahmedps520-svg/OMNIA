@@ -33,6 +33,9 @@ struct ModelSettings: Codable, Hashable, Sendable {
     /// tokens it proposes per step.
     var draftModelID: String?
     var draftLength: Int?
+    /// Load even when the memory plan says it won't fit (with a short context): the user's choice,
+    /// knowing iOS may close OMNIA.
+    var ignoreMemoryLimit: Bool?
 }
 
 /// An image encoder ("mmproj" GGUF) installed for a model, so it can read photos and screenshots.

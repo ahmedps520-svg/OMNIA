@@ -426,7 +426,7 @@ struct GGUFModelInfo: Codable, Hashable, Sendable {
     /// The chat template exposes a reasoning switch (`enable_thinking`, `reasoning_effort`, `reasoning_strength`).
     var supportsThinkingToggle: Bool {
         guard let template = chatTemplate else { return false }
-        return template.contains("enable_thinking") || template.contains("reasoning_effort") || template.contains("reasoning_strength")
+        return ReasoningPreference.isSupported(by: template)
     }
 
     static let fileTypeNames: [Int: String] = [
