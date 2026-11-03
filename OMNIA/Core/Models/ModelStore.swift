@@ -5,6 +5,20 @@ import os
 
 private let storeLog = Logger(subsystem: "app.omnia", category: "models")
 
+enum ProjectorError: LocalizedError {
+    case modelRemoved
+    case notAnEncoder(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .modelRemoved:
+            "The model this image support belongs to was removed."
+        case .notAnEncoder(let name):
+            "\(name) isn't an image encoder. Choose the mmproj .gguf file published with this model."
+        }
+    }
+}
+
 /// Registry of GGUF models stored on this device (Application Support/Models).
 ///
 /// Model files are excluded from iCloud/iTunes backup: they are large and can always be
@@ -17,6 +31,8 @@ final class ModelStore {
 
     /// Notified before a model's file is deleted so the engine can unload it first.
     @ObservationIgnored var willDeleteModel: ((InstalledModel) async -> Void)?
+    /// Notified after a model gains or loses its image encoder, so a loaded copy can follow.
+    @ObservationIgnored var projectorDidChange: ((InstalledModel) async -> Void)?
 
     let modelsDirectory: URL
     let importsInboxDirectory: URL
@@ -51,6 +67,16 @@ final class ModelStore {
 
     func isInstalled(repo: String, fileName: String) -> Bool {
         models.contains { $0.repo == repo && $0.fileName == fileName }
+    }
+
+    /// The model's image encoder file, when image support is installed.
+    func projectorURL(for model: InstalledModel) -> URL? {
+        model.projector.map { modelsDirectory.appending(path: $0.relativePath) }
+    }
+
+    func isProjectorInstalled(repo: String?, fileName: String) -> Bool {
+        let relative = ModelStore.projectorStorageName(repo: repo, fileName: fileName)
+        return models.contains { $0.projector?.relativePath == relative }
     }
 
     var sortedByRecentUse: [InstalledModel] {
@@ -142,12 +168,72 @@ final class ModelStore {
         try? FileManager.default.removeItem(at: fileURL(for: model))
         models.removeAll { $0.id == model.id }
         save()
+        if let projector = model.projector { removeProjectorFileIfUnused(projector.relativePath) }
         refreshStorage()
+    }
+
+    // MARK: Image encoders
+
+    /// Moves a verified image encoder into the Models directory and gives it to `modelID`, plus
+    /// any other installed copy of the same catalog model that has none (they share the file).
+    @discardableResult
+    func installProjector(fileAt source: URL, for modelID: String, repo: String?, fileName: String,
+                          sha256: String?, verification: VerificationState, moveFile: Bool) throws -> [InstalledModel] {
+        guard let owner = model(id: modelID) else { throw ProjectorError.modelRemoved }
+        let fileManager = FileManager.default
+        let relative = ModelStore.projectorStorageName(repo: repo, fileName: fileName)
+        let destination = modelsDirectory.appending(path: relative)
+        if fileManager.fileExists(atPath: destination.path(percentEncoded: false)) {
+            try fileManager.removeItem(at: destination)
+        }
+        if moveFile {
+            try fileManager.moveItem(at: source, to: destination)
+        } else {
+            try fileManager.copyItem(at: source, to: destination)
+        }
+        ModelStore.excludeFromBackup(destination)
+        let size = (try? fileManager.attributesOfItem(atPath: destination.path(percentEncoded: false))[.size] as? NSNumber)?.uint64Value ?? 0
+        let projector = InstalledProjector(fileName: fileName, relativePath: relative, sizeBytes: size, sha256: sha256,
+                                           repo: repo, verification: verification)
+
+        var replaced: [String] = []
+        var updated: [InstalledModel] = []
+        for index in models.indices {
+            let candidate = models[index]
+            let isSibling = owner.catalogID != nil && candidate.catalogID == owner.catalogID && candidate.projector == nil
+            guard candidate.id == modelID || isSibling else { continue }
+            if let old = candidate.projector?.relativePath, old != relative { replaced.append(old) }
+            models[index].projector = projector
+            updated.append(models[index])
+        }
+        save()
+        for path in replaced { removeProjectorFileIfUnused(path) }
+        refreshStorage()
+        storeLog.info("Installed image encoder \(relative, privacy: .public) for \(updated.count) model(s)")
+        let notify = projectorDidChange
+        Task { for model in updated { await notify?(model) } }
+        return updated
+    }
+
+    /// Turns image input off for a model. The encoder file is deleted once no model uses it.
+    func removeProjector(from modelID: String) async {
+        guard let index = models.firstIndex(where: { $0.id == modelID }), let projector = models[index].projector else { return }
+        models[index].projector = nil
+        save()
+        await projectorDidChange?(models[index])
+        removeProjectorFileIfUnused(projector.relativePath)
+        refreshStorage()
+    }
+
+    private func removeProjectorFileIfUnused(_ relativePath: String) {
+        guard !models.contains(where: { $0.projector?.relativePath == relativePath }) else { return }
+        try? FileManager.default.removeItem(at: modelsDirectory.appending(path: relativePath))
     }
 
     // MARK: Maintenance
 
-    /// Drops registry entries whose files disappeared and registers stray GGUF files.
+    /// Drops registry entries whose files disappeared and registers stray GGUF files. Image
+    /// encoders are never models: one no model uses is a leftover and is deleted.
     func reconcile() {
         let fileManager = FileManager.default
         let missing = models.filter { !fileManager.fileExists(atPath: fileURL(for: $0).path(percentEncoded: false)) }
@@ -156,11 +242,22 @@ final class ModelStore {
             models.removeAll { model in missing.contains { $0.id == model.id } }
             save()
         }
-        let known = Set(models.map(\.relativePath))
+        for index in models.indices {
+            guard let url = projectorURL(for: models[index]),
+                  !fileManager.fileExists(atPath: url.path(percentEncoded: false)) else { continue }
+            storeLog.warning("Image encoder missing for \(self.models[index].id, privacy: .public)")
+            models[index].projector = nil
+            save()
+        }
+        let known = Set(models.map(\.relativePath) + models.compactMap(\.projector?.relativePath))
         if let contents = try? fileManager.contentsOfDirectory(at: modelsDirectory, includingPropertiesForKeys: nil) {
             for url in contents where url.pathExtension.lowercased() == "gguf" && !known.contains(url.lastPathComponent) {
                 guard let inspected = try? GGUFInspector.inspect(fileAt: url) else { continue }
                 let info = inspected.info
+                if info.isEncoder {
+                    try? fileManager.removeItem(at: url)
+                    continue
+                }
                 let size = (try? fileManager.attributesOfItem(atPath: url.path(percentEncoded: false))[.size] as? NSNumber)?.uint64Value ?? 0
                 let model = InstalledModel(
                     id: InstalledModel.makeID(repo: nil, fileName: url.lastPathComponent),
@@ -219,6 +316,11 @@ final class ModelStore {
         let raw = prefix + fileName
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
         return String(raw.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" })
+    }
+
+    /// Encoders imported from Files get their own prefix, so they can't replace a model file.
+    nonisolated static func projectorStorageName(repo: String?, fileName: String) -> String {
+        storageName(repo: repo ?? "imported-encoders", fileName: fileName)
     }
 
     static func excludeFromBackup(_ url: URL) {

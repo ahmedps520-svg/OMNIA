@@ -14,6 +14,8 @@ struct ChatTurn: Hashable, Sendable {
     /// For `.tool` turns: the call this result answers, and the tool's name.
     var toolCallID: String?
     var toolName: String?
+    /// Images shown with a user turn (encoded image files, e.g. JPEG), placed before its text.
+    var images: [Data] = []
 
     /// A tool call or a tool's result, which templates without tool support can't show natively.
     var carriesTools: Bool { role == .tool || !toolCalls.isEmpty }
@@ -167,6 +169,9 @@ struct GenerationStats: Codable, Hashable, Sendable {
     /// Speculative decoding: tokens the draft model proposed, and how many the model kept.
     var draftedTokens: Int?
     var acceptedDraftTokens: Int?
+    /// Images in the prompt, and the context they take up (included in `promptTokens`).
+    var imageCount: Int?
+    var imageTokens: Int?
 
     /// Share of drafted tokens the model kept.
     var draftAcceptance: Double? {
@@ -246,6 +251,11 @@ enum InferenceError: LocalizedError {
     case modelNotInstalled
     case thermalLimit
     case grammarFailed
+    case imagesUnsupported(String)
+    case imageEncoderMissing
+    case imageEncoderFailed
+    case imageUnreadable
+    case imageFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -280,6 +290,16 @@ enum InferenceError: LocalizedError {
             "Generation stopped to let the device cool down."
         case .grammarFailed:
             "The response format couldn't be applied to this model."
+        case .imagesUnsupported(let name):
+            "\(name) can't see images. Add its image support in Models, or switch to a model that has it."
+        case .imageEncoderMissing:
+            "The image encoder file for this model is missing. Add image support again in Models."
+        case .imageEncoderFailed:
+            "The image encoder couldn't be loaded with this model. Make sure it was made for this exact model."
+        case .imageUnreadable:
+            "An attached image couldn't be read."
+        case .imageFailed(let reason):
+            "The image couldn't be processed. \(reason)"
         }
     }
 }

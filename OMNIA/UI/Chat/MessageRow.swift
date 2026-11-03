@@ -38,20 +38,29 @@ struct UserMessageView: View {
 
     @Environment(AppSettings.self) private var settings
     @ScaledMetric(relativeTo: .body) private var baseSize: CGFloat = 17
+    @State private var previewing: PreviewedImage?
+
+    private struct PreviewedImage: Identifiable {
+        let id: UUID
+        let name: String
+        let data: Data
+    }
 
     var body: some View {
+        let attachments = message.attachments
         HStack {
             Spacer(minLength: 60)
             VStack(alignment: .trailing, spacing: 8) {
-                if !message.attachments.isEmpty {
-                    ForEach(message.attachments) { attachment in
-                        Label(attachment.name, systemImage: attachment.kind.symbol)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Theme.faint, in: Capsule())
-                    }
+                if attachments.contains(where: { $0.kind == .image }) {
+                    imageStrip
+                }
+                ForEach(attachments.filter { $0.kind != .image }) { attachment in
+                    Label(attachment.name, systemImage: attachment.kind.symbol)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Theme.faint, in: Capsule())
                 }
                 if isEditing {
                     editor
@@ -70,6 +79,26 @@ struct UserMessageView: View {
                             }
                         }
                 }
+            }
+        }
+        .sheet(item: $previewing) { image in
+            ImagePreviewSheet(name: image.name, data: image.data)
+        }
+    }
+
+    /// The message's photos and screenshots; a single one is shown larger.
+    private var imageStrip: some View {
+        let pictures = message.orderedImages
+        let side: CGFloat = pictures.count == 1 ? 200 : 110
+        return HStack(spacing: 8) {
+            ForEach(pictures) { picture in
+                Button {
+                    previewing = PreviewedImage(id: picture.attachment.id, name: picture.attachment.name, data: picture.data)
+                } label: {
+                    ImageThumbnail(id: picture.attachment.id, data: picture.data, width: side, height: side)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Show \(picture.attachment.name)")
             }
         }
     }
@@ -354,6 +383,10 @@ struct GenerationDetailsSheet: View {
                 Section("Tokens") {
                     LabeledValueRow(label: "Generated", value: "\(stats.generatedTokens)")
                     LabeledValueRow(label: "Prompt", value: "\(stats.promptTokens)")
+                    if let images = stats.imageCount, let imageTokens = stats.imageTokens {
+                        LabeledValueRow(label: images == 1 ? "Image" : "Images",
+                                        value: "\(images) (\(imageTokens) tokens of the prompt)")
+                    }
                     LabeledValueRow(label: "Reused from cache", value: "\(stats.reusedPromptTokens)")
                     LabeledValueRow(label: "Context used", value: "\(stats.contextUsed) of \(stats.contextSize) (\(ByteFormat.percent(stats.contextUtilization)))")
                     if let restored = stats.restoredPromptTokens {

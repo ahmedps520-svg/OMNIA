@@ -82,7 +82,7 @@ OMNIA/
     GGUF/         GGUF header reader (local files and remote range requests)
     Models/       Catalog, recommendations, model store, background downloads, Files import
     Chat/         Conversations, comparison, export
-    Documents/    Text extraction (text, code, Markdown, PDF, RTF) and on-device retrieval
+    Documents/    Text extraction (text, code, Markdown, PDF, RTF), image preparation, on-device retrieval
     Persistence/  SwiftData schema and seed content
     Performance/  Measured CPU, memory, GPU allocation, thermal and power state
     Network/      Hugging Face client, connectivity
@@ -94,6 +94,8 @@ scripts/          Archive, icon rendering, catalog regeneration
 ```
 
 **Engine.** Each loaded model lives on its own serial queue. Weights are memory-mapped and fully offloaded to Metal; flash attention and an F16/Q8_0/Q4_0 KV cache are chosen per load. Prompts reuse the KV cache for the longest common prefix, so follow-up turns only process new tokens. Streaming is UTF-8 safe, generation stops cleanly on Stop, background, memory pressure or critical temperature, and every number shown (tokens per second, time to first token, context use) is measured.
+
+**Photos and screenshots.** Vision models read images attached from Photos, Files or the clipboard. Their image encoder (an mmproj GGUF, verified by SHA-256 like the model) is an optional download per model, loaded with the first image through llama.cpp's multimodal library (`mtmd`). Images are stored once as upright sRGB JPEGs of at most 2048 pixels, without their metadata, and take up to 1,024 tokens each; an image already in the KV cache is recognised by its content and not read again. Models without image support are told an image was attached rather than shown nothing.
 
 **Chat templates.** Newer models (Gemma 4, the Qwen3.5 family, gpt-oss, Granite 4.2, LFM3) need their exact Jinja templates. OMNIA renders the template stored in the GGUF with swift-jinja, as `llama-server --jinja` does, falling back to llama.cpp's built-in templates and then ChatML. Reasoning switches (`enable_thinking`, `reasoning_effort`, `reasoning_strength`) are exposed per conversation and per model, and reasoning is shown in a collapsible section for `<think>`, Gemma 4 thought channels, gpt-oss Harmony channels and Muse Glimmer messages.
 
@@ -131,6 +133,8 @@ After loading, OMNIA re-measures. If iOS reports too little headroom left, it un
 | 7–9B | Ornith 1.5 9B · MiMo-V2.6 Distill 9B · Qwen3.5 9B · Granite 4.2 8B |
 | 1–4B | Qwen3.5 4B · Nemotron 3.5 Bolt E4B · Gemma 4 E4B · Granite 4.2 3B · LFM3 1.7B · Gemma 4 E2B |
 
+14 of the models can see images: their image encoders (one per model, 120 MB–1.4 GB) were verified the same way on 2026-11-03 and are offered on each installed model's page. Imported models can be given an encoder file from Files.
+
 Quality scores are curated from vendor-reported benchmarks. You can also search any public GGUF repository on Hugging Face from the Models tab — OMNIA reads the remote header to check the fit before you download — or import `.gguf` files from the Files app. Files copied to *On My iPad › OMNIA* import without a network.
 
 Downloads use a background `URLSession` and can be paused, resumed (across relaunches) and retried. Each file is checked for size, SHA-256 and GGUF structure before it's used, and models are excluded from iCloud backup.
@@ -149,7 +153,7 @@ Downloads use a background `URLSession` and can be paused, resumed (across relau
 - **No background generation.** iOS doesn't allow GPU work in the background. OMNIA stops cleanly and offers **Continue**. iPadOS 26's `BGContinuedProcessingTask` with GPU access (M3+ iPads, not iPhone) could allow it later.
 - **Memory limits** for the M5 iPad Pro and iPhone 18 Pro with the increased-limit entitlement aren't published. OMNIA measures them at runtime; measure on a TestFlight build, since debug builds can differ.
 - **GPU utilization and temperatures** aren't available through public iOS APIs; the Performance center says so instead of estimating.
-- **Text only.** Several catalog models have vision encoders, but OMNIA loads the text model only and doesn't claim image or audio input.
+- **Images, not audio or video.** Some image encoders (Gemma 4 E2B/E4B, Nemotron Bolt) also contain audio towers; OMNIA uses their vision part only.
 
 ## Maintenance
 

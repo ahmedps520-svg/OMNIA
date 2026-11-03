@@ -1,8 +1,12 @@
+import PhotosUI
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct ChatView: View {
+    /// Pictures one message can carry.
+    static let maxImagesPerMessage = 4
+
     let conversationID: UUID?
     @Binding var selection: SidebarSelection?
 
@@ -17,9 +21,12 @@ struct ChatView: View {
 
     @State private var draft = ""
     @State private var attachments: [AttachmentRecord] = []
+    @State private var images: [UUID: Data] = [:]
     @State private var draftModelID: String?
     @State private var showSettings = false
     @State private var showImporter = false
+    @State private var showPhotoPicker = false
+    @State private var photoSelection: [PhotosPickerItem] = []
     @State private var showExport = false
     @State private var attachmentError: String?
     @State private var editing: Message?
@@ -59,17 +66,22 @@ struct ChatView: View {
             VStack(spacing: 8) {
                 if let error = errorText {
                     errorBanner(error)
+                } else if let model = activeModel, !images.isEmpty, !model.supportsImages {
+                    imageSupportNotice(model)
                 }
                 ComposerView(
                     text: $draft,
                     attachments: $attachments,
+                    images: $images,
                     isGenerating: isGenerating,
                     canSend: canSend,
                     placeholder: activeModel.map { "Message \($0.displayName)" } ?? "Download a model to start",
                     contextUsage: contextUsage,
                     onSend: send,
                     onStop: { chat.stop() },
-                    onAttach: { showImporter = true }
+                    onAttachPhotos: { showPhotoPicker = true },
+                    onAttachFiles: { showImporter = true },
+                    onPasteImage: pasteImages
                 )
             }
         }
@@ -84,8 +96,16 @@ struct ChatView: View {
         .sheet(isPresented: $showExport) {
             if let conversation { ExportSheet(conversations: [conversation]) }
         }
-        .fileImporter(isPresented: $showImporter, allowedContentTypes: DocumentExtractor.supportedTypes, allowsMultipleSelection: true) { result in
+        .fileImporter(isPresented: $showImporter, allowedContentTypes: DocumentExtractor.supportedTypes + ImageInput.supportedTypes,
+                      allowsMultipleSelection: true) { result in
             handleImport(result)
+        }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $photoSelection,
+                      maxSelectionCount: Self.maxImagesPerMessage, matching: .images)
+        .onChange(of: photoSelection) { _, items in
+            guard !items.isEmpty else { return }
+            photoSelection = []
+            Task { await addPhotos(items) }
         }
         .onChange(of: conversation?.id) { _, _ in
             editing = nil
@@ -200,10 +220,12 @@ struct ChatView: View {
         guard canSend else { return }
         let text = draft
         let files = attachments
+        let pictures = images
         draft = ""
         attachments = []
+        images = [:]
         attachmentError = nil
-        let result = chat.send(text, attachments: files, in: conversation, modelID: draftModelID)
+        let result = chat.send(text, attachments: files, images: pictures, in: conversation, modelID: draftModelID)
         if conversation == nil, let created = result {
             selection = .conversation(created.id)
         }
@@ -244,6 +266,14 @@ struct ChatView: View {
         case .success(let urls):
             Task {
                 for url in urls {
+                    if UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true {
+                        await addImage(named: url.lastPathComponent) {
+                            let scoped = url.startAccessingSecurityScopedResource()
+                            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                            return try Data(contentsOf: url)
+                        }
+                        continue
+                    }
                     do {
                         let extracted = try await Task.detached(priority: .userInitiated) {
                             try DocumentExtractor.extract(from: url)
@@ -259,6 +289,75 @@ struct ChatView: View {
         case .failure(let error):
             attachmentError = error.localizedDescription
         }
+    }
+
+    // MARK: Images
+
+    private func addPhotos(_ items: [PhotosPickerItem]) async {
+        for (offset, item) in items.enumerated() {
+            let name = items.count == 1 ? "Photo" : "Photo \(offset + 1)"
+            await addImage(named: name) {
+                guard let data = try await item.loadTransferable(type: Data.self) else {
+                    throw ImageInput.ImageError.unreadable
+                }
+                return data
+            }
+        }
+    }
+
+    /// Images copied in another app. Reading them may show iOS's paste permission prompt.
+    private func pasteImages() {
+        let pasted = UIPasteboard.general.images ?? []
+        guard !pasted.isEmpty else { return }
+        Task {
+            for (offset, image) in pasted.enumerated() {
+                await addImage(named: pasted.count == 1 ? "Pasted Image" : "Pasted Image \(offset + 1)") {
+                    // PNG has no orientation tag: draw the image upright first.
+                    let format = UIGraphicsImageRendererFormat()
+                    format.scale = image.scale
+                    let upright = UIGraphicsImageRenderer(size: image.size, format: format).pngData { _ in
+                        image.draw(at: .zero)
+                    }
+                    return upright
+                }
+            }
+        }
+    }
+
+    /// Prepares a picture for the model off the main thread and adds it to the draft.
+    private func addImage(named name: String, load: @escaping @Sendable () async throws -> Data) async {
+        guard attachments.filter({ $0.kind == .image }).count < Self.maxImagesPerMessage else {
+            attachmentError = "A message can include up to \(Self.maxImagesPerMessage) images."
+            return
+        }
+        do {
+            let prepared = try await Task.detached(priority: .userInitiated) {
+                try ImageInput.prepare(try await load())
+            }.value
+            let record = AttachmentRecord(name: name, kind: .image, byteSize: prepared.data.count, text: "")
+            images[record.id] = prepared.data
+            attachments.append(record)
+            attachmentError = nil
+            if let model = activeModel { engine.prepareImages(for: model) }
+        } catch {
+            attachmentError = error.localizedDescription
+        }
+    }
+
+    private func imageSupportNotice(_ model: InstalledModel) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "eye.slash").foregroundStyle(Theme.caution)
+            Text("\(model.displayName) can't see images; it will only be told they're attached. Add image support in Models, or pick a model that has it.")
+                .font(.footnote)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Button("Models") { selection = .section(.models) }
+                .font(.footnote.weight(.semibold))
+        }
+        .padding(12)
+        .frame(maxWidth: 820)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(.horizontal, 16)
     }
 
     private func errorBanner(_ text: String) -> some View {

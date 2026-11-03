@@ -22,9 +22,11 @@ enum TestModels {
     static let cpu = RuntimeConfiguration(contextLength: 512, batchSize: 128, microBatchSize: 128, threads: 2,
                                           gpuOffload: false, kvCacheType: .f16, flashAttention: false)
 
-    static func load(_ name: String, configuration: RuntimeConfiguration = cpu) async throws -> LlamaRuntime {
+    static func load(_ name: String, projector: String? = nil,
+                     configuration: RuntimeConfiguration = cpu) async throws -> LlamaRuntime {
         let file = try #require(url(name), "Missing test model \(name)")
-        return try await LlamaRuntime.load(modelID: name, displayName: name, fileURL: file,
+        let encoder = try projector.map { try #require(url($0), "Missing test encoder \($0)") }
+        return try await LlamaRuntime.load(modelID: name, displayName: name, fileURL: file, projectorURL: encoder,
                                            configuration: configuration, progress: { _ in })
     }
 }

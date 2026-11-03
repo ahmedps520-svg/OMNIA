@@ -203,6 +203,9 @@ struct InstalledModelRow: View {
                     if settings.defaultModelID == model.id {
                         Pill(text: "Default", tint: .accentColor)
                     }
+                    if model.supportsImages {
+                        Pill(text: "Images", symbol: "photo")
+                    }
                 }
                 Text("\(model.parameterLabel) · \(model.quantization ?? "GGUF") · \(ModelCatalog.architectureName(model.facts.architecture)) · \(ByteFormat.file(model.sizeBytes))")
                     .font(.caption)

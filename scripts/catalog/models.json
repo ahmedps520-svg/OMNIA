@@ -35,7 +35,13 @@
         "size": 13146393504,
         "sha256": "8c2a45ff85e7674ca185ec8eb6cdeab0e617ed9d8018caed0b64380eb2a67a5e"
       }
-    ]
+    ],
+    "projector": {
+      "repo": "ggml-org/Qwen3.8-27B-GGUF",
+      "filename": "mmproj-Qwen3.8-27B-Q8_0.gguf",
+      "size": 629247008,
+      "sha256": "2e968a6af97ce35d8971890b257b9b7edabf20ad91450501fa53162a19ee33eb"
+    }
   },
   {
     "id": "qwen3.6-35b-a3b",
@@ -73,7 +79,13 @@
         "size": 13211155424,
         "sha256": "9c964e657212fea1f24905dd7b0a89b82fd807d19fab0b41da14251b07b88fbe"
       }
-    ]
+    ],
+    "projector": {
+      "repo": "ggml-org/Qwen3.6-35B-A3B-GGUF",
+      "filename": "mmproj-Qwen3.6-35B-A3B-Q8_0.gguf",
+      "size": 614194304,
+      "sha256": "904cbf8c8e876220066ab3bf676c7efa40f3da372276fdaf8b01d2fb2a37a51d"
+    }
   },
   {
     "id": "ornith-1.5-35b-a3b",
@@ -105,7 +117,13 @@
         "size": 12543403680,
         "sha256": "be92ed1eb2da35876e91a5551c527ddcce450d49ec53aba92f03e26adba7b996"
       }
-    ]
+    ],
+    "projector": {
+      "repo": "bartowski/Ornith-1.5-35B-A3B-GGUF",
+      "filename": "mmproj-Ornith-1.5-35B-A3B-f16.gguf",
+      "size": 899283296,
+      "sha256": "815c9a671991aceeef46ca1aa103b64499db8cfadf21c83005a20ed839d53c7c"
+    }
   },
   {
     "id": "gemma-4-26b-a4b-it",
@@ -149,7 +167,13 @@
         "size": 13280213632,
         "sha256": "b08876e7eb0adc0dcac8f2d24ec064c62fd2cbd1813514516ad669e75fefecf6"
       }
-    ]
+    ],
+    "projector": {
+      "repo": "ggml-org/gemma-4-26B-A4B-it-GGUF",
+      "filename": "mmproj-gemma-4-26B-A4B-it-Q8_0.gguf",
+      "size": 806408320,
+      "sha256": "cc4e855736da450bf1e162d8cccfe0ad685727d0c9e04ef7dd8d884f3121039b"
+    }
   },
   {
     "id": "gpt-oss-20b",
@@ -239,7 +263,13 @@
         "size": 13106238240,
         "sha256": "bc867ee4fc139be474cc4e6c1794ac584507ec510bcfdefe9772a61779181b6f"
       }
-    ]
+    ],
+    "projector": {
+      "repo": "meta-models/Muse-Glimmer-30B-GGUF",
+      "filename": "mmproj-Muse-Glimmer-30B-Q4_K_M.gguf",
+      "size": 1400328928,
+      "sha256": "f48b452316f9b213758e8659444029b961a24a07f99a1abb2a9f88b06f7c00c6"
+    }
   },
   {
     "id": "gemma-4-12b-it",
@@ -289,7 +319,13 @@
         "size": 12669647328,
         "sha256": "929bd294cbdc59e41450488bea524a174f1c6ddc43f140fdb5905a5fd1e41969"
       }
-    ]
+    ],
+    "projector": {
+      "repo": "bartowski/gemma-4-12B-it-GGUF",
+      "filename": "mmproj-gemma-4-12B-it-f16.gguf",
+      "size": 122031552,
+      "sha256": "563192209f002b0a13af16a4992fdb9dd61187a36919eaf65f408bb47af3d272"
+    }
   },
   {
     "id": "ministral-3-14b-instruct-2512",
@@ -333,7 +369,13 @@
         "size": 11088410016,
         "sha256": "4321da3bfec9f407025e693e2c5dc05d166b7acc67b03bbada46c7eb5847b2cd"
       }
-    ]
+    ],
+    "projector": {
+      "repo": "ggml-org/Ministral-3-14B-Instruct-2512-GGUF",
+      "filename": "mmproj-Ministral-3-14B-Instruct-2512-Q8_0.gguf",
+      "size": 468347296,
+      "sha256": "2227355540f1d88b462892ea0bcc5c45cc73eb29433652bdedc33a8de88ba31b"
+    }
   },
   {
     "id": "ornith-1.5-9b",
@@ -371,7 +413,13 @@
         "size": 9786060384,
         "sha256": "22086870b009dbe9815ee752c48a82de930118a7c5ce5599590892ae03b8b010"
       }
-    ]
+    ],
+    "projector": {
+      "repo": "bartowski/Ornith-1.5-9B-GGUF",
+      "filename": "mmproj-Ornith-1.5-9B-f16.gguf",
+      "size": 918165728,
+      "sha256": "946850fd82bd43b856d878267bc9db809f0aaa37c81bf11918ecad1de464625e"
+    }
   },
   {
     "id": "qwen3.5-9b",
@@ -421,7 +469,13 @@
         "size": 9804541984,
         "sha256": "b58fe056b5435070240de259f3f981aa38fee96825bbd78c088d5fd90e46f2b5"
       }
-    ]
+    ],
+    "projector": {
+      "repo": "bartowski/Qwen_Qwen3.5-9B-GGUF",
+      "filename": "mmproj-Qwen_Qwen3.5-9B-f16.gguf",
+      "size": 918165952,
+      "sha256": "97f420245a85ce129bb764e86a5e21e27d782fe6d6056c6839b9c5fdb8f38289"
+    }
   },
   {
     "id": "mimo-v2.6-distill-qwen-9b",
@@ -471,7 +525,13 @@
         "size": 9545979424,
         "sha256": "2fad0aa11bb9e7aa491ff12f768954f9dd0a6e7d4ce4a897ca73ec420f3b90ae"
       }
-    ]
+    ],
+    "projector": {
+      "repo": "bartowski/MiMo-V2.6-Distill-Qwen-9B-GGUF",
+      "filename": "mmproj-MiMo-V2.6-Distill-Qwen-9B-f16.gguf",
+      "size": 918166048,
+      "sha256": "ff348f3180a63188aa7285db85f550fe38acb61dd013c599eb8bad08d2cc2576"
+    }
   },
   {
     "id": "granite-4.2-8b",
@@ -565,7 +625,13 @@
         "size": 4622131168,
         "sha256": "5c74c0ede371924357dff0cb6ba145bd67208b9b2389ded681adfff3f7608db7"
       }
-    ]
+    ],
+    "projector": {
+      "repo": "bartowski/Qwen_Qwen3.5-4B-GGUF",
+      "filename": "mmproj-Qwen_Qwen3.5-4B-f16.gguf",
+      "size": 672423488,
+      "sha256": "659b59dd44b73b1cd34af6cc424669484b06dc80f4340adf8ea84ad776eef813"
+    }
   },
   {
     "id": "nemotron-3.5-bolt-e4b",
@@ -615,7 +681,13 @@
         "size": 8031245664,
         "sha256": "05d749c477d716a4c6cce6bfcff319c71c390826b859cdc2f14291ab7832ca44"
       }
-    ]
+    ],
+    "projector": {
+      "repo": "bartowski/NVIDIA-Nemotron-3.5-Bolt-E4B-GGUF",
+      "filename": "mmproj-NVIDIA-Nemotron-3.5-Bolt-E4B-f16.gguf",
+      "size": 990373664,
+      "sha256": "64c6e621ee6a791765ad251f808b3981da5a1722c52b0ed473f0e4156617e6e2"
+    }
   },
   {
     "id": "gemma-4-e4b-it",
@@ -665,7 +737,13 @@
         "size": 8031242720,
         "sha256": "6a6eba0d36a051b5d924211a889c1436717006e7c5d413830c47caa1d46cb598"
       }
-    ]
+    ],
+    "projector": {
+      "repo": "ggml-org/gemma-4-E4B-it-GGUF",
+      "filename": "mmproj-gemma-4-E4B-it-Q8_0.gguf",
+      "size": 559874816,
+      "sha256": "197f49a93027f9843772bd24a6a9e0be2a32a788de5a3def330e9c585d86edd1"
+    }
   },
   {
     "id": "granite-4.2-3b",
@@ -803,6 +881,12 @@
         "size": 4967497184,
         "sha256": "bb145c0e8c2ede3b6992b881f7eefe6b33275eeb9998f450b5c72f4eb1d78732"
       }
-    ]
+    ],
+    "projector": {
+      "repo": "ggml-org/gemma-4-E2B-it-GGUF",
+      "filename": "mmproj-gemma-4-E2B-it-Q8_0.gguf",
+      "size": 557368064,
+      "sha256": "9406f99c16d68cda4f1f0552192dcc99021ea1fc6d2fd50b1dc3ccf30d04b292"
+    }
   }
 ]

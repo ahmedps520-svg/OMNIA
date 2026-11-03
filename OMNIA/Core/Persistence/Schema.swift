@@ -5,7 +5,8 @@ enum MessageState: String, Codable {
     case complete, streaming, interrupted, failed
 }
 
-/// Text extracted from a file the user attached to a message.
+/// A file the user attached to a message: its extracted text, or for an image (kind `.image`)
+/// only its name and size; the picture itself is kept in `Message.images`.
 struct AttachmentRecord: Codable, Hashable, Identifiable {
     var id = UUID()
     var name: String
@@ -84,6 +85,9 @@ final class Message {
     @Attribute(.externalStorage) var attachmentsData: Data?
     /// Tools the model called while writing this reply (JSON-encoded `[ToolStep]`).
     @Attribute(.externalStorage) var toolStepsData: Data?
+    /// Attached images (JPEG) by attachment ID, as a binary property list. Kept apart from
+    /// `attachmentsData` so listing attachments never decodes megabytes of pictures.
+    @Attribute(.externalStorage) var imagesData: Data?
     var conversation: Conversation?
 
     init(role: ChatRole, content: String, position: Int, modelID: String? = nil, modelName: String? = nil,
@@ -119,6 +123,34 @@ final class Message {
         get { toolStepsData.flatMap { try? JSONDecoder().decode([ToolStep].self, from: $0) } ?? [] }
         set { toolStepsData = newValue.isEmpty ? nil : try? JSONEncoder().encode(newValue) }
     }
+
+    var images: [UUID: Data] {
+        get {
+            guard let imagesData, let stored = try? PropertyListDecoder().decode([String: Data].self, from: imagesData) else { return [:] }
+            return Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in UUID(uuidString: key).map { ($0, value) } })
+        }
+        set {
+            let encoder = PropertyListEncoder()
+            encoder.outputFormat = .binary
+            let stored = Dictionary(uniqueKeysWithValues: newValue.map { ($0.key.uuidString, $0.value) })
+            imagesData = newValue.isEmpty ? nil : try? encoder.encode(stored)
+        }
+    }
+
+    /// The images attached to this message, in attachment order.
+    var orderedImages: [AttachedImage] {
+        let attached = attachments.filter { $0.kind == .image }
+        guard !attached.isEmpty else { return [] }
+        let stored = images
+        return attached.compactMap { attachment in stored[attachment.id].map { AttachedImage(attachment: attachment, data: $0) } }
+    }
+}
+
+/// A picture attached to a message, with its attachment record.
+struct AttachedImage: Identifiable {
+    let attachment: AttachmentRecord
+    let data: Data
+    var id: UUID { attachment.id }
 }
 
 @Model

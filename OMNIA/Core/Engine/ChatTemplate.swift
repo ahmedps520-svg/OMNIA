@@ -43,11 +43,33 @@ struct ChatTemplateRenderer: Sendable {
     private let template: Template
     private let bosToken: String
     private let eosToken: String
+    /// The template only reads a message's content as a list of typed parts
+    /// (`[{"type": "text", "text": …}]`), as some vision models' templates do; given a plain
+    /// string it would drop the text.
+    let requiresTypedContent: Bool
 
     init(source: String, bosToken: String, eosToken: String) throws {
-        template = try Template(Self.jinja2Compatible(source), with: .init(lstripBlocks: true, trimBlocks: true))
+        let compiled = try Template(Self.jinja2Compatible(source), with: .init(lstripBlocks: true, trimBlocks: true))
+        template = compiled
         self.bosToken = bosToken
         self.eosToken = eosToken
+        requiresTypedContent = Self.needsTypedContent(compiled, bosToken: bosToken, eosToken: eosToken)
+    }
+
+    /// Detects templates that need typed content the way llama.cpp's template engine does: a
+    /// probe message is rendered as a string, then as a typed text part, to see which one shows.
+    private static func needsTypedContent(_ template: Template, bosToken: String, eosToken: String) -> Bool {
+        let probe = "omnia-content-probe"
+        func shows(_ content: JSONValue) -> Bool {
+            let message: JSONValue = .object(["role": .string("user"), "content": content])
+            let context: [String: Value] = [
+                "messages": .array([message.jinjaValue]), "tools": .null, "documents": .null,
+                "add_generation_prompt": .boolean(true), "bos_token": .string(bosToken), "eos_token": .string(eosToken)
+            ]
+            return (try? template.render(context))?.contains(probe) ?? false
+        }
+        if shows(.string(probe)) { return false }
+        return shows(.array([.object(["type": .string("text"), "text": .string(probe)])]))
     }
 
     /// swift-jinja keeps one space between a literal "{" and a following "{%-", "{{-" or "{#-"
@@ -64,7 +86,7 @@ struct ChatTemplateRenderer: Sendable {
         // Transformers passes `tools` and `documents` as None when there are none; some templates
         // treat "undefined" differently from "none".
         var context: [String: Value] = [
-            "messages": .array(turns.map(Self.message)),
+            "messages": .array(turns.map { Self.message($0, typedContent: requiresTypedContent) }),
             "tools": tools.isEmpty ? .null : .array(tools.map(\.declaration.jinjaValue)),
             "documents": .null,
             "add_generation_prompt": .boolean(addGenerationPrompt),
@@ -87,10 +109,13 @@ struct ChatTemplateRenderer: Sendable {
     }
 
     /// An HF-style message: `role` and `content`, plus `tool_calls`, or `tool_call_id` and `name`.
-    static func message(_ turn: ChatTurn) -> Value {
+    static func message(_ turn: ChatTurn, typedContent: Bool = false) -> Value {
+        let content: JSONValue = typedContent
+            ? .array([.object(["type": .string("text"), "text": .string(turn.content)])])
+            : .string(turn.content)
         var members: OrderedDictionary<String, JSONValue> = [
             "role": .string(turn.role.rawValue),
-            "content": .string(turn.content)
+            "content": content
         ]
         if !turn.toolCalls.isEmpty {
             members["tool_calls"] = .array(turn.toolCalls.map(\.templateValue))

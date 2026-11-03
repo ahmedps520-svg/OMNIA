@@ -17,6 +17,8 @@ struct DownloadRequest: Codable, Hashable, Sendable {
     var sha256: String?
     var license: String?
     var catalogID: String?
+    /// For an image encoder: the installed model it's for (it isn't a model of its own).
+    var projectorFor: String? = nil
 }
 
 enum DownloadPhase: Equatable, Sendable {
@@ -79,6 +81,8 @@ final class DownloadManager: NSObject {
 
     private(set) var items: [String: DownloadItem] = [:]
     var onInstalled: ((InstalledModel) -> Void)?
+    /// Image support finished installing for these models.
+    var onProjectorInstalled: (([InstalledModel]) -> Void)?
 
     @ObservationIgnored private var session: URLSession!
     @ObservationIgnored private var tasks: [String: URLSessionDownloadTask] = [:]
@@ -349,8 +353,28 @@ final class DownloadManager: NSObject {
                     guard computed == expected else { throw DownloadError.checksumMismatch }
                     digest = computed
                 }
-                let inspected = try GGUFInspector.inspect(fileAt: staged)
                 let verifiedDigest = digest
+                if let owner = request.projectorFor {
+                    guard GGUFInspector.isImageEncoder(fileAt: staged) else {
+                        throw ProjectorError.notAnEncoder(request.fileName)
+                    }
+                    try await MainActor.run {
+                        guard let self else { return }
+                        let models = try self.store.installProjector(
+                            fileAt: staged, for: owner, repo: request.repo, fileName: request.fileName,
+                            sha256: verifiedDigest, verification: verifiedDigest != nil ? .verified : .structureValid,
+                            moveFile: true)
+                        self.items[request.id]?.phase = .completed
+                        self.saveState()
+                        self.onProjectorInstalled?(models)
+                    }
+                    try? await Task.sleep(for: .seconds(4))
+                    await MainActor.run {
+                        if self?.items[request.id]?.phase == .completed { self?.items[request.id] = nil }
+                    }
+                    return
+                }
+                let inspected = try GGUFInspector.inspect(fileAt: staged)
                 try await MainActor.run {
                     guard let self else { return }
                     let model = try self.store.install(
@@ -413,7 +437,12 @@ final class DownloadManager: NSObject {
     private func restoreState() {
         guard let data = try? Data(contentsOf: Self.stateURL),
               let persisted = try? JSONDecoder().decode([PersistedItem].self, from: data) else { return }
-        for entry in persisted where !store.isInstalled(repo: entry.request.repo, fileName: entry.request.fileName) {
+        for entry in persisted {
+            let request = entry.request
+            let installed = request.projectorFor != nil
+                ? store.isProjectorInstalled(repo: request.repo, fileName: request.fileName)
+                : store.isInstalled(repo: request.repo, fileName: request.fileName)
+            guard !installed else { continue }
             let phase: DownloadPhase
             switch entry.state {
             case "failed": phase = .failed(entry.message ?? "Download failed.")

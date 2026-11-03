@@ -36,27 +36,43 @@ final class LlamaRuntime: @unchecked Sendable {
     private let canSaveState: Bool
     /// A small model proposing tokens for speculative decoding, when one is attached.
     private var draft: DraftModel?
+    /// The model's image encoder file (mmproj), when image support is installed.
+    private var projectorURL: URL?
+    /// llama.cpp's multimodal context (`mtmd_context`), loaded from `projectorURL` for the first
+    /// prompt with an image.
+    private var vision: OpaquePointer?
+    /// Images held in the KV cache, by the index of their first cell. In `cachedTokens` their
+    /// cells are `LLAMA_TOKEN_NULL`.
+    private var cachedMedia: [Int: MediaSpan] = [:]
 
     private let interruptState = OSAllocatedUnfairLock<InterruptReason?>(initialState: nil)
     private let pacingNanoseconds = OSAllocatedUnfairLock<UInt64>(initialState: 0)
 
     // MARK: Backend
 
+    /// Sends llama.cpp's and its image encoder's messages to the unified log.
+    private static let forwardLog: ggml_log_callback = { level, text, _ in
+        guard let text else { return }
+        let message = String(cString: text).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else { return }
+        if level == GGML_LOG_LEVEL_ERROR {
+            llamaLog.error("\(message, privacy: .public)")
+        } else if level == GGML_LOG_LEVEL_WARN {
+            llamaLog.warning("\(message, privacy: .public)")
+        } else {
+            llamaLog.debug("\(message, privacy: .public)")
+        }
+    }
+
     private static let backendReady: Void = {
-        llama_log_set({ level, text, _ in
-            guard let text else { return }
-            let message = String(cString: text).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !message.isEmpty else { return }
-            if level == GGML_LOG_LEVEL_ERROR {
-                llamaLog.error("\(message, privacy: .public)")
-            } else if level == GGML_LOG_LEVEL_WARN {
-                llamaLog.warning("\(message, privacy: .public)")
-            } else {
-                llamaLog.debug("\(message, privacy: .public)")
-            }
-        }, nil)
+        llama_log_set(LlamaRuntime.forwardLog, nil)
+        mtmd_log_set(LlamaRuntime.forwardLog, nil)
+        mtmd_helper_log_set(LlamaRuntime.forwardLog, nil)
         llama_backend_init()
     }()
+
+    /// Where an image goes in a prompt for llama.cpp's multimodal tokenizer ("<__media__>").
+    private static let mediaMarker = String(cString: mtmd_default_marker())
 
     static var engineVersion: String {
         _ = backendReady
@@ -73,10 +89,12 @@ final class LlamaRuntime: @unchecked Sendable {
     // MARK: Loading
 
     /// Loads weights, creates the context and runs a one-token warm-up so the first real
-    /// prompt doesn't pay for Metal pipeline compilation.
+    /// prompt doesn't pay for Metal pipeline compilation. An image encoder (`projectorURL`)
+    /// loads later, with the first image.
     static func load(modelID: String,
                      displayName: String,
                      fileURL: URL,
+                     projectorURL: URL? = nil,
                      configuration: RuntimeConfiguration,
                      progress: @escaping @Sendable (Double) -> Void) async throws -> LlamaRuntime {
         _ = backendReady
@@ -85,7 +103,8 @@ final class LlamaRuntime: @unchecked Sendable {
             queue.async {
                 do {
                     let runtime = try LlamaRuntime(modelID: modelID, displayName: displayName, fileURL: fileURL,
-                                                   configuration: configuration, queue: queue, progress: progress)
+                                                   projectorURL: projectorURL, configuration: configuration,
+                                                   queue: queue, progress: progress)
                     continuation.resume(returning: runtime)
                 } catch {
                     continuation.resume(throwing: error)
@@ -99,9 +118,11 @@ final class LlamaRuntime: @unchecked Sendable {
         init(_ report: @escaping @Sendable (Double) -> Void) { self.report = report }
     }
 
-    private init(modelID: String, displayName: String, fileURL: URL, configuration: RuntimeConfiguration,
-                 queue: DispatchQueue, progress: @escaping @Sendable (Double) -> Void) throws {
+    private init(modelID: String, displayName: String, fileURL: URL, projectorURL: URL?,
+                 configuration: RuntimeConfiguration, queue: DispatchQueue,
+                 progress: @escaping @Sendable (Double) -> Void) throws {
         self.queue = queue
+        self.projectorURL = projectorURL
         let started = ContinuousClock.now
         let footprintBefore = SystemMetrics.processFootprint() ?? 0
         let gpuBefore = SystemMetrics.gpuAllocatedBytes() ?? 0
@@ -278,8 +299,12 @@ final class LlamaRuntime: @unchecked Sendable {
         guard !isClosed else { return }
         isClosed = true
         cachedTokens = []
+        cachedMedia = [:]
         draft?.close()
         draft = nil
+        // The image encoder refers to the model: it goes first.
+        if let vision { mtmd_free(vision) }
+        vision = nil
         llama_batch_free(batch)
         llama_free(context)
         llama_model_free(model)
@@ -328,6 +353,175 @@ final class LlamaRuntime: @unchecked Sendable {
         }
     }
 
+    // MARK: Images
+
+    /// Memory iOS must still have free beyond the encoder's file size before it loads: room for
+    /// the encoder's working memory while it reads an image.
+    private static let visionHeadroom: UInt64 = 512 << 20
+
+    /// Image support was added or removed. The old encoder is released once the generation in
+    /// progress (if any) finishes; a new one loads with the next image.
+    func setProjector(_ url: URL?) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            queue.async {
+                if !self.isClosed, url != self.projectorURL {
+                    if let vision = self.vision { mtmd_free(vision) }
+                    self.vision = nil
+                    self.projectorURL = url
+                }
+                continuation.resume()
+            }
+        }
+    }
+
+    /// Loads the image encoder ahead of the first image, e.g. while the user writes about one.
+    func prepareVision() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            queue.async {
+                if !self.isClosed, self.projectorURL != nil { _ = try? self.visionContext() }
+                continuation.resume()
+            }
+        }
+    }
+
+    /// The multimodal context, created on first use.
+    private func visionContext() throws -> OpaquePointer {
+        if let vision { return vision }
+        guard let projectorURL else { throw InferenceError.imagesUnsupported(info.displayName) }
+        let path = projectorURL.path(percentEncoded: false)
+        guard FileManager.default.fileExists(atPath: path) else { throw InferenceError.imageEncoderMissing }
+        let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber)?.uint64Value ?? 0
+        if let available = SystemMetrics.availableMemory(), available < size + Self.visionHeadroom {
+            throw InferenceError.insufficientMemory(
+                required: size + Self.visionHeadroom, available: available,
+                suggestion: "Reading images needs the model's image encoder in memory too. Try a shorter context or a smaller model.")
+        }
+
+        var params = mtmd_context_params_default()
+        #if targetEnvironment(simulator)
+        params.use_gpu = false
+        #else
+        params.use_gpu = info.configuration.gpuOffload
+        #endif
+        params.n_threads = Int32(info.configuration.threads)
+        params.print_timings = false
+        params.warmup = false
+        // Up to 1,024 tokens per image (a quarter of smaller contexts): sharp enough for
+        // screenshots without crowding out the conversation.
+        let preferred = min(1024, max(256, Int(llama_n_ctx(context)) / 4))
+        params.image_max_tokens = Int32(preferred)
+        var created = mtmd_init_from_file(path, model, params)
+        // Encoders with bidirectional attention (Gemma 4 12B and 26B) must read a whole image in
+        // one micro-batch, or llama.cpp aborts: make their images fit it.
+        let batchLimit = min(Int(llama_n_ubatch(context)), batchCapacity)
+        if let current = created, mtmd_decode_use_non_causal(current, nil), batchLimit < preferred {
+            mtmd_free(current)
+            params.image_max_tokens = Int32(batchLimit)
+            created = mtmd_init_from_file(path, model, params)
+        }
+        guard let loaded = created else { throw InferenceError.imageEncoderFailed }
+        guard mtmd_support_vision(loaded) else {
+            mtmd_free(loaded)
+            throw InferenceError.imageEncoderFailed
+        }
+        vision = loaded
+        return loaded
+    }
+
+    /// Encodes one image and writes it into the cache at `position`, which it advances.
+    private func evaluateImage(_ media: PromptMedia, position: inout Int) throws {
+        guard let vision else { throw InferenceError.imagesUnsupported(info.displayName) }
+        if mtmd_decode_use_non_causal(vision, media.chunk),
+           media.span.tokenCount > min(Int(llama_n_ubatch(context)), batchCapacity) {
+            throw InferenceError.imageFailed("It needs a larger batch than this model's context uses.")
+        }
+        var next = llama_pos(position)
+        let status = mtmd_helper_eval_chunk_single(vision, context, media.chunk, llama_pos(position), 0,
+                                                   Int32(batchCapacity), false, &next)
+        guard status == 0 else {
+            clearMemory()
+            if currentInterrupt == .background { throw InferenceError.backgroundExecution }
+            throw InferenceError.imageFailed("llama.cpp returned \(status) while reading it.")
+        }
+        position = Int(next)
+    }
+
+    /// Tokenizes a formatted prompt. With images, llama.cpp's multimodal tokenizer splits it into
+    /// text and image chunks; an image's cells appear in `tokens` as `LLAMA_TOKEN_NULL`.
+    private func tokenizePrompt(_ text: String, images: ImagePrompt, bitmaps: ImageBitmaps) throws -> TokenizedPrompt {
+        let resolved = images.resolve(text, marker: Self.mediaMarker)
+        guard !resolved.order.isEmpty else {
+            return TokenizedPrompt(tokens: try tokenize(resolved.text, addSpecial: true, parseSpecial: true))
+        }
+        let vision = try visionContext()
+        let pictures: [OpaquePointer?] = try resolved.order.map { try bitmaps.bitmap($0) }
+        guard let chunks = MediaChunks() else { throw InferenceError.tokenizationFailed }
+        let status = resolved.text.withCString { characters in
+            var input = mtmd_input_text(text: characters, text_len: resolved.text.utf8.count,
+                                        add_special: true, parse_special: true)
+            return pictures.withUnsafeBufferPointer { list in
+                mtmd_tokenize(vision, chunks.pointer, &input, list.baseAddress, list.count)
+            }
+        }
+        switch status {
+        case 0: break
+        case 2: throw InferenceError.imageUnreadable
+        default: throw InferenceError.imageFailed("The chat template didn't place every image.")
+        }
+
+        var result = TokenizedPrompt(tokens: [], chunks: chunks, imageCount: Set(resolved.order).count)
+        for index in 0..<mtmd_input_chunks_size(chunks.pointer) {
+            guard let chunk = mtmd_input_chunks_get(chunks.pointer, index) else { continue }
+            if mtmd_input_chunk_get_type(chunk) == MTMD_INPUT_CHUNK_TYPE_TEXT {
+                var count = 0
+                if let tokens = mtmd_input_chunk_get_tokens_text(chunk, &count), count > 0 {
+                    result.tokens.append(contentsOf: UnsafeBufferPointer(start: tokens, count: count))
+                }
+            } else {
+                let cells = mtmd_input_chunk_get_n_tokens(chunk)
+                let id = mtmd_input_chunk_get_id(chunk).map { String(cString: $0) } ?? UUID().uuidString
+                let span = MediaSpan(id: id, tokenCount: cells, positionCount: Int(mtmd_input_chunk_get_n_pos(chunk)))
+                result.media[result.tokens.count] = PromptMedia(span: span, chunk: chunk)
+                result.tokens.append(contentsOf: repeatElement(LLAMA_TOKEN_NULL, count: cells))
+            }
+        }
+        return result
+    }
+
+    private struct TokenizedPrompt {
+        var tokens: [llama_token]
+        var media: [Int: PromptMedia] = [:]
+        var chunks: MediaChunks?
+        var imageCount = 0
+    }
+
+    /// Cells of the cache that match the start of `prompt`. An image matches when it's the
+    /// same picture read the same way.
+    private func commonPrefix(with prompt: Prompt) -> Int {
+        let limit = min(cachedTokens.count, prompt.tokens.count)
+        var index = 0
+        while index < limit {
+            let cached = cachedMedia[index]
+            let incoming = prompt.media[index]?.span
+            if cached != nil || incoming != nil {
+                guard let cached, cached == incoming, index + cached.tokenCount <= limit else { break }
+                index += cached.tokenCount
+                continue
+            }
+            guard cachedTokens[index] == prompt.tokens[index] else { break }
+            index += 1
+        }
+        return index
+    }
+
+    /// The position of cache cell `index`. Each cell takes one position, except that an image
+    /// on an M-RoPE model advances fewer positions than it has cells.
+    private func cachedPosition(at index: Int) -> Int {
+        cachedMedia.reduce(index) { position, entry in
+            entry.key + entry.value.tokenCount <= index ? position - (entry.value.tokenCount - entry.value.positionCount) : position
+        }
+    }
+
     /// Drops the reusable prompt cache (e.g. when switching conversations).
     func resetCache() async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
@@ -341,6 +535,7 @@ final class LlamaRuntime: @unchecked Sendable {
     private func clearMemory() {
         llama_memory_clear(llama_get_memory(context), true)
         cachedTokens = []
+        cachedMedia = [:]
     }
 
     // MARK: Tokens
@@ -437,30 +632,55 @@ final class LlamaRuntime: @unchecked Sendable {
         return String(decoding: buffer.prefix(Int(length)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
     }
 
-    /// A formatted, tokenized prompt.
+    /// A formatted, tokenized prompt. Image cells are `LLAMA_TOKEN_NULL` in `tokens`, with the
+    /// image itself in `media` under the index of its first cell.
     private struct Prompt {
         var tokens: [llama_token]
+        var media: [Int: PromptMedia]
+        /// Owns the image chunks `media` points into.
+        var chunks: MediaChunks?
+        var imageCount: Int
         var trimmedTurns: Int
         var opensInReasoning: Bool
         var toolFormat: ToolCallFormat?
         var nativeTools: Bool
+
+        var imageTokens: Int { media.values.reduce(0) { $0 + $1.span.tokenCount } }
+
+        /// `index`, or the first cell of the image it falls inside: images are read whole.
+        func boundary(atOrBefore index: Int) -> Int {
+            for (start, item) in media where start < index && index < start + item.span.tokenCount {
+                return start
+            }
+            return index
+        }
     }
 
     /// Formats and tokenizes the conversation, dropping the oldest exchanges when it would not
     /// leave room for the reply inside the context window.
     private func prompt(for request: GenerationRequest, contextLimit: Int) throws -> Prompt {
         let reserve = min(max(request.maxTokens, 256), contextLimit / 2)
-        let parts = promptParts(for: request)
+        // Images ride through formatting as placeholders (see ImagePrompt), so trimming a turn
+        // drops its images too.
+        let images = ImagePrompt(turns: request.turns, marker: Self.mediaMarker)
+        var marked = request
+        marked.turns = images.turns
+        let bitmaps = ImageBitmaps(images.images)
+        let parts = promptParts(for: marked)
         var turns = parts.turns
         var trimmed = 0
         while true {
             var text = format(turns, addAssistant: true, variables: request.templateVariables, tools: parts.tools)
             // Thinking templates may open the reasoning block themselves ("…assistant\n<think>\n").
             let opensInReasoning = text.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("<think>")
-            if let prefix = request.assistantPrefix, !prefix.isEmpty { text += prefix }
-            let tokens = try tokenize(text, addSpecial: true, parseSpecial: true)
-            let result = Prompt(tokens: tokens, trimmedTurns: trimmed, opensInReasoning: opensInReasoning,
-                                toolFormat: parts.format, nativeTools: parts.native)
+            if let prefix = request.assistantPrefix, !prefix.isEmpty {
+                text += images.isEmpty ? prefix : ImagePrompt.sanitize(prefix, marker: Self.mediaMarker)
+            }
+            let tokenized = try tokenizePrompt(text, images: images, bitmaps: bitmaps)
+            let tokens = tokenized.tokens
+            let result = Prompt(tokens: tokens, media: tokenized.media, chunks: tokenized.chunks,
+                                imageCount: tokenized.imageCount, trimmedTurns: trimmed,
+                                opensInReasoning: opensInReasoning, toolFormat: parts.format, nativeTools: parts.native)
             if tokens.count + reserve <= contextLimit { return result }
 
             // Drop the oldest exchange: everything from the first non-system turn up to the second
@@ -519,7 +739,7 @@ final class LlamaRuntime: @unchecked Sendable {
         // Returning to a conversation whose memory was saved: restore it instead of re-reading.
         var restored = 0
         if let saved = request.memory, canSaveState, request.reusePromptCache,
-           commonPrefixLength(cachedTokens, prompt) < min(prompt.count / 2, 512),
+           commonPrefix(with: formatted) < min(prompt.count / 2, 512),
            FileManager.default.fileExists(atPath: saved.fileURL.path(percentEncoded: false)) {
             restored = restoreState(from: saved.fileURL, capacity: contextLimit)
         }
@@ -528,53 +748,66 @@ final class LlamaRuntime: @unchecked Sendable {
                                                toolCallFormat: formatted.toolFormat,
                                                restoredTokens: restored)))
 
-        // Reuse the longest common prefix still held in the KV cache.
+        // Reuse the longest common prefix still held in the KV cache (images match by content).
         let memory = llama_get_memory(context)
         var reused = 0
         if request.reusePromptCache, !cachedTokens.isEmpty {
-            reused = zip(cachedTokens, prompt).prefix { $0 == $1 }.count
-            reused = min(reused, prompt.count - 1) // at least one token must be evaluated for fresh logits
+            // At least one token must be evaluated for fresh logits, and images are read whole.
+            reused = formatted.boundary(atOrBefore: min(commonPrefix(with: formatted), prompt.count - 1))
         }
         if reused < cachedTokens.count {
             // Recurrent/hybrid and windowed caches can refuse partial removal: start clean then.
             // A sliding-window cache (swa_full = false) must also still hold the window before `reused`.
-            let windowStart = llama_pos(max(0, reused - Int(llama_model_n_swa(model))))
+            let start = cachedPosition(at: reused)
+            let windowStart = llama_pos(max(0, start - Int(llama_model_n_swa(model))))
             if reused == 0 || llama_memory_seq_pos_min(memory, 0) > windowStart
-                || !llama_memory_seq_rm(memory, 0, llama_pos(reused), -1) {
+                || !llama_memory_seq_rm(memory, 0, llama_pos(start), -1) {
                 llama_memory_clear(memory, true)
                 reused = 0
             }
         }
         cachedTokens = Array(prompt.prefix(reused))
+        cachedMedia = cachedMedia.filter { $0.key < reused }
 
-        // Evaluate the remaining prompt in batches.
-        var position = reused
-        let pending = Array(prompt[reused...])
-        var evaluated = 0
-        while evaluated < pending.count {
+        // Evaluate the rest of the prompt: text in batches, each image through its encoder.
+        var position = cachedPosition(at: reused)
+        let pending = prompt.count - reused
+        let imageStarts = formatted.media.keys.filter { $0 >= reused }.sorted()
+        let reportsProgress = pending > batchCapacity || !imageStarts.isEmpty
+        var index = reused
+        while index < prompt.count {
             if let reason = currentInterrupt {
                 clearMemory()
                 if reason == .background { throw InferenceError.backgroundExecution }
                 continuation.yield(.finished(emptyStats(stop: reason == .user ? .cancelled : .interrupted)))
                 return false
             }
-            let end = min(evaluated + batchCapacity, pending.count)
-            batch.n_tokens = 0
-            for index in evaluated..<end {
-                LlamaRuntime.add(&batch, token: pending[index], position: position + (index - evaluated),
-                                 logits: index == pending.count - 1)
+            if let image = formatted.media[index] {
+                try evaluateImage(image, position: &position)
+                cachedTokens.append(contentsOf: repeatElement(LLAMA_TOKEN_NULL, count: image.span.tokenCount))
+                cachedMedia[index] = image.span
+                index += image.span.tokenCount
+            } else {
+                let nextImage = imageStarts.first { $0 > index } ?? prompt.count
+                let end = min(index + batchCapacity, nextImage)
+                batch.n_tokens = 0
+                for cell in index..<end {
+                    LlamaRuntime.add(&batch, token: prompt[cell], position: position + (cell - index),
+                                     logits: cell == prompt.count - 1)
+                }
+                let status = llama_decode(context, batch)
+                if status != 0 {
+                    clearMemory()
+                    if currentInterrupt == .background { throw InferenceError.backgroundExecution }
+                    if status == 1 { throw InferenceError.promptTooLong(tokens: prompt.count, context: contextLimit) }
+                    throw InferenceError.decodeFailed(status)
+                }
+                position += end - index
+                cachedTokens.append(contentsOf: prompt[index..<end])
+                index = end
             }
-            let status = llama_decode(context, batch)
-            if status != 0 {
-                clearMemory()
-                if currentInterrupt == .background { throw InferenceError.backgroundExecution }
-                throw InferenceError.decodeFailed(status)
-            }
-            position += end - evaluated
-            cachedTokens.append(contentsOf: pending[evaluated..<end])
-            evaluated = end
-            if pending.count > batchCapacity {
-                continuation.yield(.promptProgress(Double(evaluated) / Double(pending.count)))
+            if reportsProgress {
+                continuation.yield(.promptProgress(Double(index - reused) / Double(pending)))
             }
         }
         let promptFinished = ContinuousClock.now
@@ -587,7 +820,8 @@ final class LlamaRuntime: @unchecked Sendable {
         defer { llama_sampler_free(sampler) }
         var output = TokenOutput(stopMatcher: StopSequenceMatcher(stopSequences(for: request, prompt: formatted)))
         let emit: (String) -> Void = { continuation.yield(.text($0)) }
-        let draft = request.speculative ? self.draft : nil
+        // The draft model reads text only: with images in the cache, replies are written one by one.
+        let draft = request.speculative && cachedMedia.isEmpty ? self.draft : nil
         if let draft {
             try generateSpeculatively(with: draft, sampler: sampler, output: &output, position: &position,
                                       maxTokens: request.maxTokens, contextLimit: contextLimit, emit: emit)
@@ -611,7 +845,7 @@ final class LlamaRuntime: @unchecked Sendable {
             promptTokensPerSecond: evaluatedPrompt > 0 ? Double(evaluatedPrompt) / promptSeconds : 0,
             tokensPerSecond: generated > 1 ? Double(generated - 1) / decodeSeconds : 0,
             totalDuration: (finished - started).seconds,
-            contextUsed: position,
+            contextUsed: cachedTokens.count,
             contextSize: contextLimit,
             stopReason: output.stop,
             modelID: info.modelID,
@@ -619,6 +853,10 @@ final class LlamaRuntime: @unchecked Sendable {
         )
         stats.trimmedTurns = formatted.trimmedTurns > 0 ? formatted.trimmedTurns : nil
         stats.restoredPromptTokens = restored > 0 ? restored : nil
+        if formatted.imageCount > 0 {
+            stats.imageCount = formatted.imageCount
+            stats.imageTokens = formatted.imageTokens
+        }
         if draft != nil {
             stats.draftedTokens = output.drafted
             stats.acceptedDraftTokens = output.accepted
@@ -687,13 +925,19 @@ final class LlamaRuntime: @unchecked Sendable {
             }
             let token = llama_sampler_sample(sampler, context, -1)
             guard output.accept(token, from: self, emit: emit) else { return }
-            if position >= contextLimit {
+            // Cells, not positions: an image on an M-RoPE model fills more cells than positions.
+            if cachedTokens.count >= contextLimit {
                 output.stop = .contextFull
                 return
             }
             batch.n_tokens = 0
             LlamaRuntime.add(&batch, token: token, position: position, logits: true)
             let status = llama_decode(context, batch)
+            if status == 1 {
+                // No free cache slot (a sliding-window cache can fill early); the cache is unchanged.
+                output.stop = .contextFull
+                return
+            }
             if status != 0 {
                 clearMemory()
                 if currentInterrupt != nil {
@@ -748,6 +992,10 @@ final class LlamaRuntime: @unchecked Sendable {
                 LlamaRuntime.add(&batch, token: token, position: position + 1 + offset, logits: true)
             }
             let status = llama_decode(context, batch)
+            if status == 1 {
+                output.stop = .contextFull
+                return
+            }
             if status != 0 {
                 clearMemory()
                 draft.reset()
@@ -796,8 +1044,12 @@ final class LlamaRuntime: @unchecked Sendable {
     }
 
     /// Re-reads `cachedTokens` into a cleared cache: the fallback when rejected tokens can't be
-    /// removed in place.
+    /// removed in place. Only text can be re-read (speculative decoding never runs with images).
     private func rebuildCache() throws {
+        guard cachedMedia.isEmpty else {
+            clearMemory()
+            throw InferenceError.decodeFailed(-1)
+        }
         let tokens = cachedTokens
         clearMemory()
         var index = 0
@@ -884,10 +1136,6 @@ final class LlamaRuntime: @unchecked Sendable {
 
     // MARK: Saved conversation memory
 
-    private func commonPrefixLength(_ a: [llama_token], _ b: [llama_token]) -> Int {
-        zip(a, b).prefix { $0 == $1 }.count
-    }
-
     /// Loads a saved sequence state into the cache. Returns the number of tokens restored, or 0
     /// (with the cache cleared and the unusable file removed) if it can't be used.
     private func restoreState(from url: URL, capacity: Int) -> Int {
@@ -907,9 +1155,11 @@ final class LlamaRuntime: @unchecked Sendable {
     }
 
     /// Writes the cached conversation state, when it's long enough to be worth it. Written to a
-    /// temporary file first so an interrupted save never leaves a damaged state behind.
+    /// temporary file first so an interrupted save never leaves a damaged state behind. A state
+    /// holding images isn't saved: its image cells can't be matched again after a restore.
     private func saveStateIfNeeded(_ request: ConversationMemoryRequest?) {
-        guard let request, canSaveState, !isClosed, cachedTokens.count >= request.minimumTokens else { return }
+        guard let request, canSaveState, !isClosed, cachedMedia.isEmpty,
+              cachedTokens.count >= request.minimumTokens else { return }
         let size = llama_state_seq_get_size(context, 0)
         guard size > 0, Int64(size) <= request.maximumBytes else { return }
         let path = request.fileURL.path(percentEncoded: false)

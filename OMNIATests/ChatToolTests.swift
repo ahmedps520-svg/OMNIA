@@ -76,8 +76,10 @@ final class ChatHarness {
         chat = ChatService(engine: engine, store: store, settings: settings, container: container)
     }
 
-    func send(_ text: String, in conversation: Conversation? = nil) async throws -> Conversation {
-        let conversation = try #require(chat.send(text, attachments: [], in: conversation, modelID: model.id))
+    func send(_ text: String, attachments: [AttachmentRecord] = [], images: [UUID: Data] = [:],
+              in conversation: Conversation? = nil) async throws -> Conversation {
+        let conversation = try #require(chat.send(text, attachments: attachments, images: images, in: conversation,
+                                                  modelID: model.id))
         var waited = 0
         while chat.isBusy, waited < 500 {
             try await Task.sleep(for: .milliseconds(10))

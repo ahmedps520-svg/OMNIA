@@ -94,6 +94,7 @@ const num = (n) => n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '_');
 const lines = [];
 lines.push('// Generated from Hugging Face API data (sizes, SHA-256) and each file\'s GGUF header (architecture facts).');
 lines.push('// Every repository below was verified as openly downloadable (not gated) on 2026-11-02.');
+lines.push('// Image encoders (mmproj files, for photos and screenshots) were verified the same way on 2026-11-03.');
 lines.push('// Regenerate with scripts/generate-catalog.mjs rather than editing by hand.');
 lines.push('');
 lines.push('import Foundation');
@@ -127,7 +128,11 @@ for (const m of catalog) {
     `                parameters: ${m.params_total_b}, activeParameters: ${m.params_active_b}, thinkingToggle: ${f.thinking}),`,
     '            variants: [',
     variants,
-    '            ]',
+    m.projector ? '            ],' : '            ]',
+    ...(m.projector ? [
+      `            projector: CatalogProjector(repo: ${str(m.projector.repo)}, fileName: ${str(m.projector.filename)},`,
+      `                                        sizeBytes: ${num(m.projector.size)}, sha256: ${str(m.projector.sha256)})`
+    ] : []),
     '        )'
   ].join('\n'));
 }

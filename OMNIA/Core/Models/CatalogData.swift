@@ -1,5 +1,6 @@
 // Generated from Hugging Face API data (sizes, SHA-256) and each file's GGUF header (architecture facts).
 // Every repository below was verified as openly downloadable (not gated) on 2026-11-02.
+// Image encoders (mmproj files, for photos and screenshots) were verified the same way on 2026-11-03.
 // Regenerate with scripts/generate-catalog.mjs rather than editing by hand.
 
 import Foundation
@@ -26,7 +27,9 @@ extension ModelCatalog {
                 CatalogVariant(quant: "UD-Q2_K_XL", fileName: "Qwen3.8-27B-UD-Q2_K_XL.gguf", sizeBytes: 9_828_981_664, sha256: "fd4730dd8aad070517978752b63d530aeb1740d2283cab9fa24f1e404032ddb0"),
                 CatalogVariant(quant: "UD-IQ3_XXS", fileName: "Qwen3.8-27B-UD-IQ3_XXS.gguf", sizeBytes: 10_934_860_704, sha256: "c0b7c3038681ed2e3040456c1dd45f9858b6c2290bed172c70388a94874f3eee"),
                 CatalogVariant(quant: "UD-Q3_K_XL", fileName: "Qwen3.8-27B-UD-Q3_K_XL.gguf", sizeBytes: 13_146_393_504, sha256: "8c2a45ff85e7674ca185ec8eb6cdeab0e617ed9d8018caed0b64380eb2a67a5e")
-            ]
+            ],
+            projector: CatalogProjector(repo: "ggml-org/Qwen3.8-27B-GGUF", fileName: "mmproj-Qwen3.8-27B-Q8_0.gguf",
+                                        sizeBytes: 629_247_008, sha256: "2e968a6af97ce35d8971890b257b9b7edabf20ad91450501fa53162a19ee33eb")
         ),
         CatalogModel(
             id: "qwen3.6-35b-a3b",
@@ -48,7 +51,9 @@ extension ModelCatalog {
                 CatalogVariant(quant: "UD-IQ2_M", fileName: "Qwen3.6-35B-A3B-UD-IQ2_M.gguf", sizeBytes: 11_522_702_304, sha256: "2be7ef1ed7e1af8b10d3829102cf9a6c2bd5ddb64d675b4ece23a60799403d43"),
                 CatalogVariant(quant: "UD-Q2_K_XL", fileName: "Qwen3.6-35B-A3B-UD-Q2_K_XL.gguf", sizeBytes: 12_290_628_576, sha256: "96b9c0af5c77a4ecaabe3983175112b5ece763261c1ece12b2494b692a70dad7"),
                 CatalogVariant(quant: "UD-IQ3_XXS", fileName: "Qwen3.6-35B-A3B-UD-IQ3_XXS.gguf", sizeBytes: 13_211_155_424, sha256: "9c964e657212fea1f24905dd7b0a89b82fd807d19fab0b41da14251b07b88fbe")
-            ]
+            ],
+            projector: CatalogProjector(repo: "ggml-org/Qwen3.6-35B-A3B-GGUF", fileName: "mmproj-Qwen3.6-35B-A3B-Q8_0.gguf",
+                                        sizeBytes: 614_194_304, sha256: "904cbf8c8e876220066ab3bf676c7efa40f3da372276fdaf8b01d2fb2a37a51d")
         ),
         CatalogModel(
             id: "ornith-1.5-35b-a3b",
@@ -69,7 +74,9 @@ extension ModelCatalog {
                 CatalogVariant(quant: "IQ2_XXS", fileName: "Ornith-1.5-35B-A3B-IQ2_XXS.gguf", sizeBytes: 10_255_140_512, sha256: "14963c6830ae8287ad42a53c0fd87ca9fc67a8de8da1d18e3a076a348e96a32f"),
                 CatalogVariant(quant: "IQ2_S", fileName: "Ornith-1.5-35B-A3B-IQ2_S.gguf", sizeBytes: 11_486_963_360, sha256: "49b923ebe5f4d4a4384ccb86dd2b93effacc96ec1a3054a0192cc61dc045ebab"),
                 CatalogVariant(quant: "IQ2_M", fileName: "Ornith-1.5-35B-A3B-IQ2_M.gguf", sizeBytes: 12_543_403_680, sha256: "be92ed1eb2da35876e91a5551c527ddcce450d49ec53aba92f03e26adba7b996")
-            ]
+            ],
+            projector: CatalogProjector(repo: "bartowski/Ornith-1.5-35B-A3B-GGUF", fileName: "mmproj-Ornith-1.5-35B-A3B-f16.gguf",
+                                        sizeBytes: 899_283_296, sha256: "815c9a671991aceeef46ca1aa103b64499db8cfadf21c83005a20ed839d53c7c")
         ),
         CatalogModel(
             id: "gemma-4-26b-a4b-it",
@@ -92,7 +99,9 @@ extension ModelCatalog {
                 CatalogVariant(quant: "Q3_K_M", fileName: "google_gemma-4-26B-A4B-it-Q3_K_M.gguf", sizeBytes: 13_019_981_440, sha256: "4826221b7a285284b65222537f58ebfc6880290ff5441e13bfb1a7ca4d65df21"),
                 CatalogVariant(quant: "Q3_K_L", fileName: "google_gemma-4-26B-A4B-it-Q3_K_L.gguf", sizeBytes: 13_199_180_416, sha256: "2a74593c43e06245f86577f2d1e27a268d91be655993f70dfd64cb556214b347"),
                 CatalogVariant(quant: "IQ3_M", fileName: "google_gemma-4-26B-A4B-it-IQ3_M.gguf", sizeBytes: 13_280_213_632, sha256: "b08876e7eb0adc0dcac8f2d24ec064c62fd2cbd1813514516ad669e75fefecf6")
-            ]
+            ],
+            projector: CatalogProjector(repo: "ggml-org/gemma-4-26B-A4B-it-GGUF", fileName: "mmproj-gemma-4-26B-A4B-it-Q8_0.gguf",
+                                        sizeBytes: 806_408_320, sha256: "cc4e855736da450bf1e162d8cccfe0ad685727d0c9e04ef7dd8d884f3121039b")
         ),
         CatalogModel(
             id: "gpt-oss-20b",
@@ -154,7 +163,9 @@ extension ModelCatalog {
                 CatalogVariant(quant: "IQ2_M", fileName: "Muse-Glimmer-30B-IQ2_M.gguf", sizeBytes: 10_657_479_200, sha256: "67a24245fb600a01668163b7afb5287c0413eff21f326b482da45b8fa0727e7d"),
                 CatalogVariant(quant: "IQ3_XXS", fileName: "Muse-Glimmer-30B-IQ3_XXS.gguf", sizeBytes: 11_546_640_928, sha256: "bc489d8df5a3bdf85ef200bd1dcec9a436290502354810163549cac328dac90a"),
                 CatalogVariant(quant: "IQ3_M", fileName: "Muse-Glimmer-30B-IQ3_M.gguf", sizeBytes: 13_106_238_240, sha256: "bc867ee4fc139be474cc4e6c1794ac584507ec510bcfdefe9772a61779181b6f")
-            ]
+            ],
+            projector: CatalogProjector(repo: "meta-models/Muse-Glimmer-30B-GGUF", fileName: "mmproj-Muse-Glimmer-30B-Q4_K_M.gguf",
+                                        sizeBytes: 1_400_328_928, sha256: "f48b452316f9b213758e8659444029b961a24a07f99a1abb2a9f88b06f7c00c6")
         ),
         CatalogModel(
             id: "gemma-4-12b-it",
@@ -178,7 +189,9 @@ extension ModelCatalog {
                 CatalogVariant(quant: "Q5_K_M", fileName: "gemma-4-12B-it-Q5_K_M.gguf", sizeBytes: 8_774_965_728, sha256: "24fe88d9e6bba6a1805629a09e40d4d837a894d559c7708055f7a03211e2a25e"),
                 CatalogVariant(quant: "Q6_K", fileName: "gemma-4-12B-it-Q6_K.gguf", sizeBytes: 10_239_326_688, sha256: "53336de05c4af36dcb61daf0d984be076ddf0245e3ce7f61aa10b72cb4044e97"),
                 CatalogVariant(quant: "Q8_0", fileName: "gemma-4-12B-it-Q8_0.gguf", sizeBytes: 12_669_647_328, sha256: "929bd294cbdc59e41450488bea524a174f1c6ddc43f140fdb5905a5fd1e41969")
-            ]
+            ],
+            projector: CatalogProjector(repo: "bartowski/gemma-4-12B-it-GGUF", fileName: "mmproj-gemma-4-12B-it-f16.gguf",
+                                        sizeBytes: 122_031_552, sha256: "563192209f002b0a13af16a4992fdb9dd61187a36919eaf65f408bb47af3d272")
         ),
         CatalogModel(
             id: "ministral-3-14b-instruct-2512",
@@ -201,7 +214,9 @@ extension ModelCatalog {
                 CatalogVariant(quant: "Q4_K_M", fileName: "mistralai_Ministral-3-14B-Instruct-2512-Q4_K_M.gguf", sizeBytes: 8_239_068_576, sha256: "a95aea79c3043039306f9c3957aa091baf24d428507eb7596c59ddc54ff75b80"),
                 CatalogVariant(quant: "Q5_K_M", fileName: "mistralai_Ministral-3-14B-Instruct-2512-Q5_K_M.gguf", sizeBytes: 9_620_567_456, sha256: "d6ab2abd228ed45c7d85b4896d6d6d86a40421e741aaf8add9da61c4a0563a0f"),
                 CatalogVariant(quant: "Q6_K", fileName: "mistralai_Ministral-3-14B-Instruct-2512-Q6_K.gguf", sizeBytes: 11_088_410_016, sha256: "4321da3bfec9f407025e693e2c5dc05d166b7acc67b03bbada46c7eb5847b2cd")
-            ]
+            ],
+            projector: CatalogProjector(repo: "ggml-org/Ministral-3-14B-Instruct-2512-GGUF", fileName: "mmproj-Ministral-3-14B-Instruct-2512-Q8_0.gguf",
+                                        sizeBytes: 468_347_296, sha256: "2227355540f1d88b462892ea0bcc5c45cc73eb29433652bdedc33a8de88ba31b")
         ),
         CatalogModel(
             id: "ornith-1.5-9b",
@@ -223,7 +238,9 @@ extension ModelCatalog {
                 CatalogVariant(quant: "Q5_K_M", fileName: "Ornith-1.5-9B-Q5_K_M.gguf", sizeBytes: 6_642_544_576, sha256: "e4d9634a3b6546a5c00a8680568fe1125f6c98c704ee51ae52ba07650fb4247d"),
                 CatalogVariant(quant: "Q6_K", fileName: "Ornith-1.5-9B-Q6_K.gguf", sizeBytes: 7_558_901_696, sha256: "b6f76e74f86245b3caee014b797c10dca931c4dfdaabfb134eab655f81e4154a"),
                 CatalogVariant(quant: "Q8_0", fileName: "Ornith-1.5-9B-Q8_0.gguf", sizeBytes: 9_786_060_384, sha256: "22086870b009dbe9815ee752c48a82de930118a7c5ce5599590892ae03b8b010")
-            ]
+            ],
+            projector: CatalogProjector(repo: "bartowski/Ornith-1.5-9B-GGUF", fileName: "mmproj-Ornith-1.5-9B-f16.gguf",
+                                        sizeBytes: 918_165_728, sha256: "946850fd82bd43b856d878267bc9db809f0aaa37c81bf11918ecad1de464625e")
         ),
         CatalogModel(
             id: "qwen3.5-9b",
@@ -247,7 +264,9 @@ extension ModelCatalog {
                 CatalogVariant(quant: "Q5_K_M", fileName: "Qwen_Qwen3.5-9B-Q5_K_M.gguf", sizeBytes: 7_111_487_520, sha256: "a686d88ec1e6881f9bf161526826cd6d6874b7f0e80e0f79acf6144a132c5d7e"),
                 CatalogVariant(quant: "Q6_K", fileName: "Qwen_Qwen3.5-9B-Q6_K.gguf", sizeBytes: 7_958_818_848, sha256: "073a9275e65d9c8cd2819cf5f77b99fbaa6e87ba591da6bbaa86ec073a64bfef"),
                 CatalogVariant(quant: "Q8_0", fileName: "Qwen_Qwen3.5-9B-Q8_0.gguf", sizeBytes: 9_804_541_984, sha256: "b58fe056b5435070240de259f3f981aa38fee96825bbd78c088d5fd90e46f2b5")
-            ]
+            ],
+            projector: CatalogProjector(repo: "bartowski/Qwen_Qwen3.5-9B-GGUF", fileName: "mmproj-Qwen_Qwen3.5-9B-f16.gguf",
+                                        sizeBytes: 918_165_952, sha256: "97f420245a85ce129bb764e86a5e21e27d782fe6d6056c6839b9c5fdb8f38289")
         ),
         CatalogModel(
             id: "mimo-v2.6-distill-qwen-9b",
@@ -271,7 +290,9 @@ extension ModelCatalog {
                 CatalogVariant(quant: "Q5_K_M", fileName: "MiMo-V2.6-Distill-Qwen-9B-Q5_K_M.gguf", sizeBytes: 6_876_124_704, sha256: "04cf46f2b5584ef922697d6c063f94879434fb86c467f1a09e52daf0cddaf35f"),
                 CatalogVariant(quant: "Q6_K", fileName: "MiMo-V2.6-Distill-Qwen-9B-Q6_K.gguf", sizeBytes: 7_793_710_624, sha256: "ef96d05a2ddf2cbb450d1af1ac3860ec769d3575bafa70692ee5609bda3fad7d"),
                 CatalogVariant(quant: "Q8_0", fileName: "MiMo-V2.6-Distill-Qwen-9B-Q8_0.gguf", sizeBytes: 9_545_979_424, sha256: "2fad0aa11bb9e7aa491ff12f768954f9dd0a6e7d4ce4a897ca73ec420f3b90ae")
-            ]
+            ],
+            projector: CatalogProjector(repo: "bartowski/MiMo-V2.6-Distill-Qwen-9B-GGUF", fileName: "mmproj-MiMo-V2.6-Distill-Qwen-9B-f16.gguf",
+                                        sizeBytes: 918_166_048, sha256: "ff348f3180a63188aa7285db85f550fe38acb61dd013c599eb8bad08d2cc2576")
         ),
         CatalogModel(
             id: "granite-4.2-8b",
@@ -318,7 +339,9 @@ extension ModelCatalog {
                 CatalogVariant(quant: "Q5_K_M", fileName: "Qwen_Qwen3.5-4B-Q5_K_M.gguf", sizeBytes: 3_443_763_168, sha256: "21c4643259ce62ffd979848e5819ce03823fd9e9902279ab54cc0d572d83d33e"),
                 CatalogVariant(quant: "Q6_K", fileName: "Qwen_Qwen3.5-4B-Q6_K.gguf", sizeBytes: 3_805_358_048, sha256: "5a5bc7a3f9375b395e9f81fb69109038cf160c84606b8192f13cbb8355ca59f2"),
                 CatalogVariant(quant: "Q8_0", fileName: "Qwen_Qwen3.5-4B-Q8_0.gguf", sizeBytes: 4_622_131_168, sha256: "5c74c0ede371924357dff0cb6ba145bd67208b9b2389ded681adfff3f7608db7")
-            ]
+            ],
+            projector: CatalogProjector(repo: "bartowski/Qwen_Qwen3.5-4B-GGUF", fileName: "mmproj-Qwen_Qwen3.5-4B-f16.gguf",
+                                        sizeBytes: 672_423_488, sha256: "659b59dd44b73b1cd34af6cc424669484b06dc80f4340adf8ea84ad776eef813")
         ),
         CatalogModel(
             id: "nemotron-3.5-bolt-e4b",
@@ -342,7 +365,9 @@ extension ModelCatalog {
                 CatalogVariant(quant: "Q5_K_M", fileName: "NVIDIA-Nemotron-3.5-Bolt-E4B-Q5_K_M.gguf", sizeBytes: 5_983_548_768, sha256: "58e25be8678a32cc28d9f31400d41759ee1f1cdd24e7133d87f49a7089a654d7"),
                 CatalogVariant(quant: "Q6_K", fileName: "NVIDIA-Nemotron-3.5-Bolt-E4B-Q6_K.gguf", sizeBytes: 6_448_997_728, sha256: "e372a90ea52b410fcd782a5a91caccb081f77389965dd7aae3620482760e1e98"),
                 CatalogVariant(quant: "Q8_0", fileName: "NVIDIA-Nemotron-3.5-Bolt-E4B-Q8_0.gguf", sizeBytes: 8_031_245_664, sha256: "05d749c477d716a4c6cce6bfcff319c71c390826b859cdc2f14291ab7832ca44")
-            ]
+            ],
+            projector: CatalogProjector(repo: "bartowski/NVIDIA-Nemotron-3.5-Bolt-E4B-GGUF", fileName: "mmproj-NVIDIA-Nemotron-3.5-Bolt-E4B-f16.gguf",
+                                        sizeBytes: 990_373_664, sha256: "64c6e621ee6a791765ad251f808b3981da5a1722c52b0ed473f0e4156617e6e2")
         ),
         CatalogModel(
             id: "gemma-4-e4b-it",
@@ -366,7 +391,9 @@ extension ModelCatalog {
                 CatalogVariant(quant: "Q5_K_M", fileName: "google_gemma-4-E4B-it-Q5_K_M.gguf", sizeBytes: 5_820_883_424, sha256: "1c57b87a06a7c0fd1b9fa8f5d5e505b720c15099648e0dcdc78acd857f72a7cc"),
                 CatalogVariant(quant: "Q6_K", fileName: "google_gemma-4-E4B-it-Q6_K.gguf", sizeBytes: 6_329_954_784, sha256: "bea1c94443c91fff61a722d9da5cd3f1cf0196d1e914798ee89d3c00ea365df9"),
                 CatalogVariant(quant: "Q8_0", fileName: "google_gemma-4-E4B-it-Q8_0.gguf", sizeBytes: 8_031_242_720, sha256: "6a6eba0d36a051b5d924211a889c1436717006e7c5d413830c47caa1d46cb598")
-            ]
+            ],
+            projector: CatalogProjector(repo: "ggml-org/gemma-4-E4B-it-GGUF", fileName: "mmproj-gemma-4-E4B-it-Q8_0.gguf",
+                                        sizeBytes: 559_874_816, sha256: "197f49a93027f9843772bd24a6a9e0be2a32a788de5a3def330e9c585d86edd1")
         ),
         CatalogModel(
             id: "granite-4.2-3b",
@@ -436,7 +463,9 @@ extension ModelCatalog {
                 CatalogVariant(quant: "Q5_K_M", fileName: "google_gemma-4-E2B-it-Q5_K_M.gguf", sizeBytes: 3_658_384_864, sha256: "e0400afe4c2cc8069238bff9f6e990cd4e087f76aa8fc35a6f076874d0d6dac7"),
                 CatalogVariant(quant: "Q6_K", fileName: "google_gemma-4-E2B-it-Q6_K.gguf", sizeBytes: 3_898_486_240, sha256: "d7ea8cdd30d8e15bf11e5a37e8c141a600ad161d847165591fe86ab0288fb9d4"),
                 CatalogVariant(quant: "Q8_0", fileName: "google_gemma-4-E2B-it-Q8_0.gguf", sizeBytes: 4_967_497_184, sha256: "bb145c0e8c2ede3b6992b881f7eefe6b33275eeb9998f450b5c72f4eb1d78732")
-            ]
+            ],
+            projector: CatalogProjector(repo: "ggml-org/gemma-4-E2B-it-GGUF", fileName: "mmproj-gemma-4-E2B-it-Q8_0.gguf",
+                                        sizeBytes: 557_368_064, sha256: "9406f99c16d68cda4f1f0552192dcc99021ea1fc6d2fd50b1dc3ccf30d04b292")
         )
     ]
 }

@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// An installed model: status, memory plan, per-model settings, benchmark and history.
 struct InstalledModelDetailView: View {
@@ -8,12 +9,16 @@ struct InstalledModelDetailView: View {
     @Environment(ModelStore.self) private var store
     @Environment(InferenceEngine.self) private var engine
     @Environment(AppSettings.self) private var settings
+    @Environment(DownloadManager.self) private var downloads
+    @Environment(ModelImporter.self) private var importer
     @Environment(\.dismiss) private var dismiss
 
     @Query private var records: [InferenceRecord]
     @State private var errorMessage: String?
     @State private var benchmarkProgress: Double?
     @State private var showDelete = false
+    @State private var showRemoveImages = false
+    @State private var showEncoderImporter = false
     @State private var systemPrompt = ""
 
     init(modelID: String) {
@@ -37,6 +42,7 @@ struct InstalledModelDetailView: View {
                         }
                         memory(model)
                         modelSettings(model)
+                        imageSupport(model)
                         performance(model)
                         fileInfo(model)
                         Button("Delete Model", systemImage: "trash", role: .destructive) { showDelete = true }
@@ -59,6 +65,18 @@ struct InstalledModelDetailView: View {
                     }
                 } message: {
                     Text("The model file is removed from this device. Conversations that used it are kept.")
+                }
+                .confirmationDialog("Remove image support?", isPresented: $showRemoveImages, titleVisibility: .visible) {
+                    Button("Remove Image Support", role: .destructive) {
+                        Task { await store.removeProjector(from: model.id) }
+                    }
+                } message: {
+                    Text("\(model.displayName) will read text only. The encoder file is deleted once no other model uses it.")
+                }
+                .fileImporter(isPresented: $showEncoderImporter, allowedContentTypes: [ModelImporter.ggufType, .data]) { result in
+                    if case .success(let url) = result {
+                        Task { await importer.importProjector(at: url, for: model) }
+                    }
                 }
                 .onAppear { systemPrompt = model.settings.systemPrompt ?? "" }
             } else {
@@ -147,7 +165,7 @@ struct InstalledModelDetailView: View {
 
     private func modelSettings(_ model: InstalledModel) -> some View {
         let budget = engine.currentBudget()
-        let maxContext = MemoryPlanner.maxContextThatFits(model.facts, fileSize: model.sizeBytes, kv: .q4_0,
+        let maxContext = MemoryPlanner.maxContextThatFits(model.facts, fileSize: model.sizeBytes + model.projectorReserve, kv: .q4_0,
                                                           profile: engine.profile, allowance: budget.allowance) ?? 4096
         let contextOptions = [2048, 4096, 8192, 16_384, 32_768, 65_536, 131_072, 262_144]
             .filter { $0 <= min(model.facts.trainContext, engine.profile.maximumContext) }
@@ -235,6 +253,94 @@ struct InstalledModelDetailView: View {
                 }
             }
             .surface()
+        }
+    }
+
+    // MARK: Image support
+
+    private func imageSupport(_ model: InstalledModel) -> some View {
+        let catalog = ModelCatalog.model(id: model.catalogID)
+        let request = catalog?.projectorRequest(for: model)
+        return VStack(alignment: .leading, spacing: 12) {
+            SectionHeader("Image Support", subtitle: "Lets the model read photos and screenshots you attach to a message.")
+            VStack(alignment: .leading, spacing: 12) {
+                if let projector = model.projector {
+                    Label("\(model.displayName) can see images.", systemImage: "photo")
+                        .font(.subheadline.weight(.semibold))
+                    LabeledValueRow(label: "Image encoder", value: projector.fileName)
+                    LabeledValueRow(label: "Size", value: ByteFormat.file(projector.sizeBytes))
+                    LabeledValueRow(label: "Verification", value: projector.verification == .verified
+                                    ? "SHA-256 matches the publisher's hash" : "Valid GGUF (no published hash to compare)")
+                    Text("The encoder loads with the first image you send, and memory planning keeps room for it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("Remove Image Support", systemImage: "trash", role: .destructive) { showRemoveImages = true }
+                        .buttonStyle(.glass)
+                } else if let request, let item = downloads.item(for: request.id) {
+                    projectorDownload(item, request: request)
+                } else if let request, let projector = catalog?.projector {
+                    Text("Download the image encoder published with \(catalog?.name ?? "this model") (\(ByteFormat.file(projector.sizeBytes)), verified by SHA-256). Photos and screenshots stay on this device.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Button("Download Image Support", systemImage: "arrow.down.circle") { startDownload(request) }
+                        .buttonStyle(.glassProminent)
+                } else if catalog != nil {
+                    Text("\(model.displayName) reads text only.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("If this model can see images, add the image encoder published with it: an mmproj .gguf file from the same repository.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Button("Add Encoder File…", systemImage: "folder") { showEncoderImporter = true }
+                        .buttonStyle(.glass)
+                        .disabled(importer.isBusy)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .surface()
+        }
+    }
+
+    @ViewBuilder
+    private func projectorDownload(_ item: DownloadItem, request: DownloadRequest) -> some View {
+        switch item.phase {
+        case .downloading:
+            ProgressView(value: item.fraction) {
+                Text("Downloading image support · \(Int(item.fraction * 100))%").font(.footnote)
+            }
+            Button("Cancel", role: .cancel) { downloads.cancel(request.id) }
+                .buttonStyle(.glass)
+        case .paused:
+            Text("Download paused at \(Int(item.fraction * 100))%.").font(.footnote).foregroundStyle(.secondary)
+            HStack {
+                Button("Resume", systemImage: "play.fill") { downloads.resume(request.id) }
+                    .buttonStyle(.glassProminent)
+                Button("Cancel", role: .cancel) { downloads.cancel(request.id) }
+                    .buttonStyle(.glass)
+            }
+        case .verifying(let fraction):
+            ProgressView(value: fraction) {
+                Text("Verifying the encoder's SHA-256…").font(.footnote)
+            }
+        case .failed(let message):
+            Label(message, systemImage: "exclamationmark.triangle")
+                .font(.footnote)
+                .foregroundStyle(Theme.critical)
+            Button("Try Again", systemImage: "arrow.clockwise") { startDownload(request) }
+                .buttonStyle(.glass)
+        case .completed:
+            Label("Image support installed.", systemImage: "checkmark.circle")
+                .font(.footnote)
+        }
+    }
+
+    private func startDownload(_ request: DownloadRequest) {
+        do {
+            errorMessage = nil
+            try downloads.start(request)
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 

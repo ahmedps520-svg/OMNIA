@@ -52,6 +52,8 @@ jobs:
         with:
           path: ~/omnia-test-models
           key: omnia-test-models-${{ hashFiles('scripts/fetch-test-models.sh') }}
+          # A changed list starts from the previous files; the script fetches only what's new.
+          restore-keys: omnia-test-models-
 
       - name: Download engine test models
         if: steps.models.outputs.cache-hit != 'true'

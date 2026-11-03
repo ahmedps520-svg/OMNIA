@@ -4,7 +4,8 @@ import PDFKit
 import UniformTypeIdentifiers
 
 enum DocumentKind: String, Codable, Sendable {
-    case text, markdown, code, pdf, richText, data
+    /// `image` is a photo or screenshot attached to a message (see `ImageInput`); it has no text.
+    case text, markdown, code, pdf, richText, data, image
 
     var symbol: String {
         switch self {
@@ -14,14 +15,15 @@ enum DocumentKind: String, Codable, Sendable {
         case .pdf: "doc.viewfinder"
         case .richText: "doc.richtext"
         case .data: "tablecells"
+        case .image: "photo"
         }
     }
 }
 
 /// Extracts plain text from files the user attaches or adds to the knowledge library.
 ///
-/// Models in OMNIA are text-only, so images, audio and video are rejected with a clear message
-/// instead of being silently ignored or pretended to be understood.
+/// Images reach models through `ImageInput` instead; audio and video are rejected with a clear
+/// message rather than silently ignored or pretended to be understood.
 enum DocumentExtractor {
     enum ExtractionError: LocalizedError {
         case unsupported(String)

@@ -39,6 +39,11 @@ final class AppServices {
             if self.settings.defaultModelID == nil { self.settings.defaultModelID = model.id }
             self.engine.post("arrow.down.circle", "\(model.displayName) is downloaded, verified and ready offline.")
         }
+        downloads.onProjectorInstalled = { [weak self] models in
+            guard let self, let first = models.first else { return }
+            let name = models.count == 1 ? first.displayName : "\(models.count) models"
+            self.engine.post("photo", "\(name) can now read photos and screenshots.")
+        }
     }
 
     /// The Hugging Face client honours Offline-only mode at the moment of use.

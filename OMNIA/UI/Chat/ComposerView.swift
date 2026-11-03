@@ -4,13 +4,17 @@ import SwiftUI
 struct ComposerView: View {
     @Binding var text: String
     @Binding var attachments: [AttachmentRecord]
+    /// Pictures of the `.image` attachments, by attachment ID.
+    @Binding var images: [UUID: Data]
     var isGenerating: Bool
     var canSend: Bool
     var placeholder: String
     var contextUsage: Double?
     var onSend: () -> Void
     var onStop: () -> Void
-    var onAttach: () -> Void
+    var onAttachPhotos: () -> Void
+    var onAttachFiles: () -> Void
+    var onPasteImage: () -> Void
 
     @FocusState private var focused: Bool
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -21,39 +25,36 @@ struct ComposerView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(attachments) { attachment in
-                            HStack(spacing: 6) {
-                                Image(systemName: attachment.kind.symbol)
-                                Text(attachment.name).lineLimit(1)
-                                Text(ByteFormat.file(Int64(attachment.byteSize))).foregroundStyle(.tertiary)
-                                Button {
-                                    attachments.removeAll { $0.id == attachment.id }
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                }
-                                .buttonStyle(.plain)
-                                .foregroundStyle(.secondary)
-                                .accessibilityLabel("Remove \(attachment.name)")
+                            if attachment.kind == .image, let data = images[attachment.id] {
+                                imageChip(attachment, data: data)
+                            } else {
+                                fileChip(attachment)
                             }
-                            .font(.caption.weight(.medium))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .glassEffect(.regular, in: .capsule)
                         }
                     }
                     .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
                 }
             }
 
             HStack(alignment: .bottom, spacing: 10) {
-                Button(action: onAttach) {
+                Menu {
+                    Button("Photo Library", systemImage: "photo.on.rectangle", action: onAttachPhotos)
+                    Button("Files…", systemImage: "folder", action: onAttachFiles)
+                    if UIPasteboard.general.hasImages {
+                        Button("Paste Image", systemImage: "doc.on.clipboard", action: onPasteImage)
+                    }
+                } label: {
                     Image(systemName: "paperclip")
                         .font(.body.weight(.medium))
                         .frame(width: 34, height: 34)
+                        .contentShape(Rectangle())
                 }
+                .menuStyle(.button)
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .accessibilityLabel("Attach Files")
-                .help("Attach text, code or PDF files")
+                .accessibilityLabel("Attach")
+                .help("Attach photos, screenshots, text, code or PDF files")
 
                 TextField(placeholder, text: $text, axis: .vertical)
                     .lineLimit(1...8)
@@ -97,6 +98,48 @@ struct ComposerView: View {
         .padding(.top, 6)
         .frame(maxWidth: 860)
         .frame(maxWidth: .infinity)
+    }
+
+    private func remove(_ attachment: AttachmentRecord) {
+        attachments.removeAll { $0.id == attachment.id }
+        images[attachment.id] = nil
+    }
+
+    private func imageChip(_ attachment: AttachmentRecord, data: Data) -> some View {
+        ImageThumbnail(id: attachment.id, data: data, width: 52, height: 52)
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    remove(attachment)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 17))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, .black.opacity(0.55))
+                }
+                .buttonStyle(.plain)
+                .padding(3)
+                .accessibilityLabel("Remove \(attachment.name)")
+            }
+    }
+
+    private func fileChip(_ attachment: AttachmentRecord) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: attachment.kind.symbol)
+            Text(attachment.name).lineLimit(1)
+            Text(ByteFormat.file(Int64(attachment.byteSize))).foregroundStyle(.tertiary)
+            Button {
+                remove(attachment)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Remove \(attachment.name)")
+        }
+        .font(.caption.weight(.medium))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .glassEffect(.regular, in: .capsule)
     }
 }
 

@@ -26,6 +26,17 @@ struct ModelSettings: Codable, Hashable, Sendable {
     var draftLength: Int?
 }
 
+/// An image encoder ("mmproj" GGUF) installed for a model, so it can read photos and screenshots.
+struct InstalledProjector: Codable, Hashable, Sendable {
+    var fileName: String
+    /// Path relative to the Models directory.
+    var relativePath: String
+    var sizeBytes: UInt64
+    var sha256: String?
+    var repo: String?
+    var verification: VerificationState
+}
+
 /// A GGUF model stored on this device.
 struct InstalledModel: Codable, Identifiable, Hashable, Sendable {
     var id: String
@@ -53,8 +64,15 @@ struct InstalledModel: Codable, Identifiable, Hashable, Sendable {
     var benchmark: BenchmarkMeasurement?
     var benchmarkDate: Date?
     var benchmarkContext: Int?
+    /// The image encoder, when image support is installed.
+    var projector: InstalledProjector?
 
     var parameterLabel: String { ParameterFormat.label(billions: facts.parameters) }
+
+    var supportsImages: Bool { projector != nil }
+
+    /// Memory set aside for the image encoder: its weights plus working memory while it encodes.
+    var projectorReserve: UInt64 { projector.map { $0.sizeBytes + (384 << 20) } ?? 0 }
 
     var bitsPerWeight: Double? {
         guard facts.parameters > 0 else { return QuantizationInfo.bitsPerWeight(quantization) }

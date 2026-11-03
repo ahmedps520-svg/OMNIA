@@ -490,4 +490,17 @@ enum GGUFInspector {
         guard let bytes = try? handle.read(upToCount: 4) else { return false }
         return Array(bytes) == GGUFParser.magic
     }
+
+    /// Whether a file is an image encoder that llama.cpp can pair with a model: an "mmproj"
+    /// GGUF (architecture `clip`) with a vision tower.
+    static func isImageEncoder(fileAt url: URL) -> Bool {
+        guard let inspected = try? inspect(fileAt: url), inspected.info.isEncoder else { return false }
+        return inspected.header.metadata["clip.has_vision_encoder"]?.boolValue ?? true
+    }
+}
+
+extension GGUFModelInfo {
+    /// llama.cpp writes image and audio encoders ("mmproj" files) with the `clip` architecture.
+    /// They aren't models on their own: they belong to the model they were made for.
+    var isEncoder: Bool { architecture == "clip" }
 }

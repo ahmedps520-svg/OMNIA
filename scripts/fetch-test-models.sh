@@ -9,7 +9,8 @@
 #   bge-small                BAAI bge-small-en-v1.5 embedding model (MIT)
 #   SmolVLM-256M             HuggingFaceTB SmolVLM 256M Instruct + image encoder (Apache-2.0)
 #   Qwen3.5-0.8B (two)       Qwen3.5 0.8B, a hybrid (linear + full attention) model (Apache-2.0),
-#                            quantized by unsloth and by bartowski: a speculative-decoding pair
+#                            quantized by unsloth and by bartowski: a speculative-decoding pair;
+#                            bartowski's image encoder makes it the M-RoPE vision test model
 #
 # Usage: scripts/fetch-test-models.sh <directory>
 set -euo pipefail
@@ -28,6 +29,7 @@ models=(
   "mmproj-SmolVLM-256M-Instruct-Q8_0.gguf 7e943f7c53f0382a6fc41b6ee0c2def63ba4fded9ab8ed039cc9e2ab905e0edd $hf/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/main/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf"
   "Qwen3.5-0.8B-Q4_0.gguf 444406ddd926550c724ec18d5120a9d40ded44908a063b0e66e9a7e5464c652c $hf/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_0.gguf"
   "Qwen_Qwen3.5-0.8B-Q4_0.gguf 407c9dec5a813ebe4ed381e26b9b04f62b9041ea96f1a054ff9aa67c2fe46b36 $hf/bartowski/Qwen_Qwen3.5-0.8B-GGUF/resolve/main/Qwen_Qwen3.5-0.8B-Q4_0.gguf"
+  "mmproj-Qwen_Qwen3.5-0.8B-f16.gguf 1dc1351c82e41b48edb55fd6ddfa7ca60fb5a16b3d5abf3ce7054880dd022847 $hf/bartowski/Qwen_Qwen3.5-0.8B-GGUF/resolve/main/mmproj-Qwen_Qwen3.5-0.8B-f16.gguf"
 )
 
 for entry in "${models[@]}"; do

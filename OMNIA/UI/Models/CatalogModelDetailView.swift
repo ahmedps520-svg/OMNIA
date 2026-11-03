@@ -56,6 +56,9 @@ struct CatalogModelDetailView: View {
             StatTile(title: "Native context", value: ByteFormat.tokens(model.facts.trainContext), symbol: "text.alignleft")
             StatTile(title: "License", value: model.license, symbol: "doc.text")
             StatTile(title: "Reasoning", value: model.facts.thinkingToggle ? "Switchable" : (model.tags.contains("Reasoning") ? "Always on" : "None"), symbol: "sparkle")
+            StatTile(title: "Images", value: model.projector == nil ? "Text only" : "Can see images",
+                     detail: model.projector.map { "Optional \(ByteFormat.file($0.sizeBytes)) image encoder, added after download" },
+                     symbol: "photo")
             Link(destination: model.huggingFaceURL) {
                 StatTile(title: "Source", value: "Hugging Face", detail: model.repo, symbol: "link")
             }

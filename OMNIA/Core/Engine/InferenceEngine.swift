@@ -53,8 +53,10 @@ final class InferenceEngine {
                                          _ progress: @escaping @Sendable (Double) -> Void) async throws -> any InferenceBackend
     /// Creates the backend for a model: llama.cpp. Tests substitute scripted backends.
     @ObservationIgnored var loadBackend: BackendLoader = { model, file, configuration, progress in
-        try await LlamaRuntime.load(modelID: model.id, displayName: model.displayName, fileURL: file,
-                                    configuration: configuration, progress: progress)
+        // The image encoder lives next to the model file (both in the Models directory).
+        let projector = model.projector.map { file.deletingLastPathComponent().appending(path: $0.relativePath) }
+        return try await LlamaRuntime.load(modelID: model.id, displayName: model.displayName, fileURL: file,
+                                           projectorURL: projector, configuration: configuration, progress: progress)
     }
     @ObservationIgnored private var idleTimer: Timer?
     @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
@@ -81,6 +83,9 @@ final class InferenceEngine {
         store.willDeleteModel = { [weak self] model in
             await self?.unload(model.id)
             await self?.conversationMemory.removeAll(modelID: model.id)
+        }
+        store.projectorDidChange = { [weak self] model in
+            await self?.projectorChanged(model)
         }
         scheduleIdleCheck()
     }
@@ -114,7 +119,9 @@ final class InferenceEngine {
             }
         }
         let requested = model.settings.contextLength ?? (settings.contextLength > 0 ? settings.contextLength : nil)
-        return MemoryPlanner.plan(model.facts, fileSize: model.sizeBytes, requestedContext: requested,
+        // With image support installed, room is kept for the image encoder, which loads with the
+        // first image.
+        return MemoryPlanner.plan(model.facts, fileSize: model.sizeBytes + model.projectorReserve, requestedContext: requested,
                                   kvChoice: model.settings.kvCache ?? settings.kvCache, profile: profile,
                                   allowance: allowance, flashAttention: settings.flashAttention)
     }
@@ -376,6 +383,21 @@ final class InferenceEngine {
 
     func resetPromptCache(for modelID: String) async {
         await loaded[modelID]?.backend.resetCache()
+    }
+
+    // MARK: Images
+
+    /// Loads a loaded model's image encoder ahead of time, so a message with a photo starts
+    /// sooner. Nothing happens for a model that isn't loaded or has no image support.
+    func prepareImages(for model: InstalledModel) {
+        guard model.supportsImages, let runtime = loaded[model.id]?.backend as? LlamaRuntime else { return }
+        Task { await runtime.prepareVision() }
+    }
+
+    /// Image support was added or removed: a loaded copy picks up the change without reloading.
+    private func projectorChanged(_ model: InstalledModel) async {
+        guard let runtime = loaded[model.id]?.backend as? LlamaRuntime else { return }
+        await runtime.setProjector(store.projectorURL(for: model))
     }
 
     // MARK: System events

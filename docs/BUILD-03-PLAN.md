@@ -20,12 +20,12 @@ OMNIA is developed without a local Mac, so each check has to run in the cloud:
 
 ---
 
-## Stage 1: Test foundation (in progress)
+## Stage 1: Test foundation (done)
 
 - llama.cpp's release framework has no simulator slice, so CI now builds one from the same source tag and caches it. Release builds still use the official, checksum-verified framework.
 - New engine-test harness: real model loads and generations on the simulator's CPU with tiny models.
 
-## Stage 2: Saved chat memory, JSON mode and tools
+## Stage 2: Saved chat memory, JSON mode and tools (done)
 
 **Saved chat memory.** After a long reply, OMNIA saves the model's working memory (its KV cache) for that conversation. Reopening the chat later continues instantly instead of re-reading the whole history.
 - The save is tied to the exact model and settings, and is discarded if either changes.
@@ -42,18 +42,20 @@ OMNIA is developed without a local Mac, so each check has to run in the cloud:
 
 Tool calls use each model's own chat-template format (Qwen/Hermes, Gemma, gpt-oss, Mistral, Granite, LFM). Models without native tool support get a described protocol instead. Each conversation can turn tools on or off.
 
-## Stage 3: Speculative decoding
+## Stage 3: Speculative decoding (implemented)
 
 A small "draft" model guesses several tokens ahead and the big model checks them all at once. That makes big models answer faster with identical output quality, because every emitted token is still the big model's own choice.
 - OMNIA offers this only when both models share a tokenizer.
 - The memory planner counts both models.
-- It's not available for hybrid or recurrent models (the Qwen3.5 and LFM families), because their memory can't be rolled back.
+- Hybrid models (the Qwen3.5 family) undo rejected guesses from llama.cpp's recurrent-state snapshots, which the memory planner also counts.
 
-## Stage 4: Photos and screenshots in chat
+## Stage 4: Photos and screenshots in chat (implemented)
 
-- Attach photos, screenshots or images from Files.
-- Vision models such as Gemma 4 get their image encoders (mmproj files) added to the catalog. They're downloaded with the model, or later with one tap.
-- Uses llama.cpp's multimodal library, which is already in the pinned framework.
+- Attach photos, screenshots or images from Files or the clipboard (up to 4 per message).
+- 14 catalog models get their image encoders (mmproj files, SHA-256 verified); each installed model's page offers them as a one-tap download. Imported models can take an encoder file from Files.
+- Uses llama.cpp's multimodal library (`mtmd`) from the pinned framework. An image already in the model's memory is recognised by content and not read again; M-RoPE models (the Qwen3.5 family) are handled.
+- Memory planning keeps room for the encoder, which loads with the first image.
+- Tests: image preparation, prompt placement, encoder storage, chat, and real image runs with SmolVLM and Qwen3.5 0.8B on CI.
 
 ## Stage 5: Smarter document search
 

@@ -20,6 +20,14 @@ struct CatalogVariant: Identifiable, Hashable, Sendable {
     }
 }
 
+/// The image encoder (an "mmproj" GGUF) that lets a catalog model read photos and screenshots.
+struct CatalogProjector: Hashable, Sendable {
+    let repo: String
+    let fileName: String
+    let sizeBytes: Int64
+    let sha256: String
+}
+
 /// A curated, verified model from a public Hugging Face repository.
 struct CatalogModel: Identifiable, Hashable, Sendable {
     let id: String
@@ -34,6 +42,8 @@ struct CatalogModel: Identifiable, Hashable, Sendable {
     let tags: [String]
     let facts: ArchitectureFacts
     let variants: [CatalogVariant]
+    /// Optional download that adds image input; nil for text-only models.
+    var projector: CatalogProjector? = nil
 
     var parameterLabel: String {
         if facts.isMixtureOfExperts {
@@ -58,6 +68,25 @@ struct CatalogModel: Identifiable, Hashable, Sendable {
             sha256: variant.sha256,
             license: license,
             catalogID: id
+        )
+    }
+
+    /// Downloads this model's image encoder for an installed copy of it. Every installed copy
+    /// of the same catalog model shares the one file.
+    func projectorRequest(for model: InstalledModel) -> DownloadRequest? {
+        guard let projector else { return nil }
+        return DownloadRequest(
+            id: InstalledModel.makeID(repo: projector.repo, fileName: projector.fileName),
+            repo: projector.repo,
+            path: projector.fileName,
+            fileName: projector.fileName,
+            displayName: "Image support for \(name)",
+            developer: developer,
+            expectedBytes: projector.sizeBytes,
+            sha256: projector.sha256,
+            license: license,
+            catalogID: id,
+            projectorFor: model.id
         )
     }
 

@@ -111,8 +111,10 @@ final class ChatService {
     // MARK: Actions
 
     /// Sends a user message and streams the reply. Creates the conversation on first send.
+    /// `images` holds the pictures of the `.image` attachments, by attachment ID.
     @discardableResult
-    func send(_ text: String, attachments: [AttachmentRecord], in existing: Conversation?, modelID: String?) -> Conversation? {
+    func send(_ text: String, attachments: [AttachmentRecord], images: [UUID: Data] = [:], in existing: Conversation?,
+              modelID: String?) -> Conversation? {
         let trimmed = text.trimmed
         guard !trimmed.isEmpty || !attachments.isEmpty else { return existing }
         let conversation = existing ?? createConversation(modelID: modelID)
@@ -124,6 +126,8 @@ final class ChatService {
 
         let user = Message(role: .user, content: trimmed, position: nextPosition(in: conversation))
         user.attachments = attachments
+        let attachedIDs = Set(attachments.filter { $0.kind == .image }.map(\.id))
+        user.images = images.filter { attachedIDs.contains($0.key) }
         conversation.messages.append(user)
         if conversation.messages.filter({ $0.role == .user }).count == 1 {
             let source = trimmed.isEmpty ? (attachments.first?.name ?? "Attachment") : trimmed
@@ -469,7 +473,9 @@ final class ChatService {
         for message in history {
             switch message.role {
             case .user:
-                turns.append(ChatTurn(role: .user, content: expand(message, budget: documentBudget)))
+                var turn = ChatTurn(role: .user, content: expand(message, budget: documentBudget))
+                turn.images = message.orderedImages.map(\.data)
+                turns.append(turn)
             case .assistant:
                 // Tools used for this reply, in the order they ran, so the model knows what it found.
                 let steps = message.toolSteps
@@ -487,12 +493,44 @@ final class ChatService {
                 continue
             }
         }
+        Self.limitImages(&turns, supported: model.supportsImages, keep: Self.imageLimit(contextTokens: contextTokens))
         return turns
     }
 
+    /// Images a prompt carries at most: each takes up to 1,024 tokens (a quarter of smaller
+    /// contexts), so images never fill more than about half the window.
+    nonisolated static func imageLimit(contextTokens: Int) -> Int {
+        min(4, max(1, contextTokens / 2048))
+    }
+
+    /// Keeps the newest `keep` images (none when the model can't see images). Every image left
+    /// out becomes a short note in its turn, so the model knows something was shown.
+    nonisolated static func limitImages(_ turns: inout [ChatTurn], supported: Bool, keep: Int) {
+        var remaining = supported ? max(0, keep) : 0
+        for index in turns.indices.reversed() where !turns[index].images.isEmpty {
+            let count = turns[index].images.count
+            let kept = min(count, remaining)
+            remaining -= kept
+            guard kept < count else { continue }
+            let dropped = count - kept
+            turns[index].images = Array(turns[index].images.prefix(kept))
+            let note: String
+            if supported {
+                note = dropped == 1 ? "[An image shown here was left out to save memory.]"
+                    : "[\(dropped) images shown here were left out to save memory.]"
+            } else {
+                note = dropped == 1 ? "[The user attached an image, but this model can't view images.]"
+                    : "[The user attached \(dropped) images, but this model can't view images.]"
+            }
+            let content = turns[index].content
+            turns[index].content = content.isEmpty ? note : note + "\n\n" + content
+        }
+    }
+
     /// Inlines attached files, or only their most relevant passages when they are too long.
+    /// Images aren't text: they travel with the turn itself.
     private func expand(_ message: Message, budget: Int) -> String {
-        let attachments = message.attachments
+        let attachments = message.attachments.filter { $0.kind != .image }
         guard !attachments.isEmpty else { return message.content }
         let perFile = max(2_000, budget / attachments.count)
         var text = message.content

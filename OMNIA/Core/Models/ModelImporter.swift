@@ -52,6 +52,10 @@ final class ModelImporter {
             let header = try await Task.detached(priority: .userInitiated) {
                 try GGUFInspector.inspect(fileAt: url)
             }.value
+            if header.info.isEncoder {
+                phase = .failed("\(name) is an image encoder, not a model. Open the model it belongs to in Models and add it under Image Support.")
+                return
+            }
 
             if isInsideContainer {
                 try FileManager.default.moveItem(at: url, to: staging)
@@ -77,6 +81,34 @@ final class ModelImporter {
                 try? fileManager.removeItem(at: staging)
             }
             phase = .failed("\(name) couldn't be imported: \(error.localizedDescription)")
+        }
+    }
+
+    /// Adds an image encoder (mmproj .gguf) the user picked to an installed model. Whether it
+    /// matches the model is only known when llama.cpp first loads the pair.
+    func importProjector(at url: URL, for model: InstalledModel) async {
+        guard !isBusy else { return }
+        let name = url.lastPathComponent
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+        let staging = FileManager.default.temporaryDirectory.appending(path: "import-\(UUID().uuidString).gguf")
+        do {
+            phase = .verifying(name: name)
+            let isEncoder = await Task.detached(priority: .userInitiated) {
+                GGUFInspector.isImageEncoder(fileAt: url)
+            }.value
+            guard isEncoder else { throw ProjectorError.notAnEncoder(name) }
+            phase = .copying(name: name, fraction: 0)
+            try await copy(from: url, to: staging) { [weak self] fraction in
+                Task { @MainActor in self?.phase = .copying(name: name, fraction: fraction) }
+            }
+            try store.installProjector(fileAt: staging, for: model.id, repo: nil, fileName: name, sha256: nil,
+                                       verification: .structureValid, moveFile: true)
+            phase = .imported("Image support for \(model.displayName)")
+        } catch {
+            try? FileManager.default.removeItem(at: staging)
+            phase = .failed("\(name) couldn't be added: \(error.localizedDescription)")
         }
     }
 

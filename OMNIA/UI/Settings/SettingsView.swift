@@ -115,7 +115,9 @@ struct SettingsView: View {
             Section {
                 LabeledContent("Downloaded models", value: "\(store.models.count) · \(ByteFormat.file(store.storageUsed))")
                 ForEach(store.sortedByRecentUse) { model in
-                    LabeledContent(model.displayName, value: ByteFormat.file(model.sizeBytes))
+                    LabeledContent(model.displayName, value: model.projector.map {
+                        "\(ByteFormat.file(model.sizeBytes)) + \(ByteFormat.file($0.sizeBytes)) for images"
+                    } ?? ByteFormat.file(model.sizeBytes))
                         .swipeActions {
                             Button("Delete", role: .destructive) {
                                 Task {

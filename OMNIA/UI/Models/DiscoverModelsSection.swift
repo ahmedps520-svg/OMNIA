@@ -108,6 +108,9 @@ struct CatalogModelRow: View {
                     .lineLimit(2)
                 HStack(spacing: 6) {
                     ForEach(model.tags, id: \.self) { Pill(text: $0) }
+                    if model.projector != nil {
+                        Pill(text: "Sees images", symbol: "photo")
+                    }
                 }
             }
             Spacer(minLength: 8)
