@@ -68,6 +68,7 @@ final class AppServices {
         monitor.start()
         connectivity.start()
         store.reconcile()
+        store.refreshSystemModels()
         if PersistenceSchema.loadError == nil {
             SeedData.installIfNeeded(in: container.mainContext)
         }

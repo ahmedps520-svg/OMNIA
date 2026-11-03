@@ -40,13 +40,18 @@ struct InstalledModelDetailView: View {
                                 .foregroundStyle(Theme.critical)
                                 .surface(padding: 12)
                         }
-                        memory(model)
-                        modelSettings(model)
-                        imageSupport(model)
-                        performance(model)
-                        fileInfo(model)
-                        Button("Delete Model", systemImage: "trash", role: .destructive) { showDelete = true }
-                            .buttonStyle(.glass)
+                        if model.isSystem {
+                            systemModelInfo
+                            performance(model)
+                        } else {
+                            memory(model)
+                            modelSettings(model)
+                            imageSupport(model)
+                            performance(model)
+                            fileInfo(model)
+                            Button("Delete Model", systemImage: "trash", role: .destructive) { showDelete = true }
+                                .buttonStyle(.glass)
+                        }
                     }
                     .padding(24)
                     .frame(maxWidth: 900)
@@ -120,7 +125,9 @@ struct InstalledModelDetailView: View {
                 } else {
                     Label("Default model", systemImage: "star.fill").font(.footnote).foregroundStyle(.secondary)
                 }
-                if let progress = benchmarkProgress {
+                if model.isSystem {
+                    EmptyView()
+                } else if let progress = benchmarkProgress {
                     ProgressView(value: progress).frame(width: 100)
                     Button("Cancel") { engine.cancelBenchmark() }.buttonStyle(.glass)
                 } else {
@@ -196,7 +203,8 @@ struct InstalledModelDetailView: View {
                     }
                 }
                 let draftCandidates = store.models.filter {
-                    $0.id != model.id && $0.sizeBytes < model.sizeBytes && abs($0.facts.vocabSize - model.facts.vocabSize) <= 128
+                    !$0.isSystem && $0.id != model.id && $0.sizeBytes < model.sizeBytes
+                        && abs($0.facts.vocabSize - model.facts.vocabSize) <= 128
                 }
                 if !draftCandidates.isEmpty || model.settings.draftModelID != nil {
                     VStack(alignment: .leading, spacing: 8) {
@@ -252,6 +260,24 @@ struct InstalledModelDetailView: View {
                     .disabled(engine.isGenerating)
                 }
             }
+            .surface()
+        }
+    }
+
+    // MARK: Apple's model
+
+    private var systemModelInfo: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader("About", subtitle: "Built into iOS with Apple Intelligence.")
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Apple's on-device model runs entirely on this device, like every model in OMNIA, and needs no download: iOS keeps it ready and manages its memory.")
+                LabeledValueRow(label: "Context", value: "\(ByteFormat.tokens(AppleFoundationBackend.contextSize)) tokens")
+                LabeledValueRow(label: "In OMNIA", value: "Text replies; tools, images and JSON mode use downloaded models")
+                Text("Earlier turns that don't fit its short context are left out, newest kept.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .font(.callout)
             .surface()
         }
     }

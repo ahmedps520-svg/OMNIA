@@ -172,7 +172,8 @@ struct HomeView: View {
                         StatusDot(color: engine.isLoaded(model.id) ? Theme.positive : Color.secondary.opacity(0.5))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(model.displayName).font(.subheadline)
-                            Text("\(model.parameterLabel) · \(model.quantization ?? "GGUF") · \(ByteFormat.file(model.sizeBytes))")
+                            Text(model.isSystem ? "Built into iOS"
+                                 : "\(model.parameterLabel) · \(model.quantization ?? "GGUF") · \(ByteFormat.file(model.sizeBytes))")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

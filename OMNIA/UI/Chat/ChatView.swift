@@ -434,7 +434,8 @@ struct ModelPickerMenu: View {
                     } else {
                         Text(model.displayName)
                     }
-                    Text(engine.isLoaded(model.id) ? "Loaded · \(model.parameterLabel)" : "\(model.parameterLabel) · \(ByteFormat.file(model.sizeBytes))")
+                    Text(model.isSystem ? "Built into iOS"
+                         : engine.isLoaded(model.id) ? "Loaded · \(model.parameterLabel)" : "\(model.parameterLabel) · \(ByteFormat.file(model.sizeBytes))")
                 }
             }
             Divider()

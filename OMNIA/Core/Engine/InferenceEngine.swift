@@ -112,6 +112,7 @@ final class InferenceEngine {
     /// Plans a load for `model` using its own settings, then the global defaults.
     /// With `keepingLoaded`, memory already promised to other loaded models is set aside.
     func plan(for model: InstalledModel, budget: MemoryBudget? = nil, keepingLoaded: Bool = false) -> LoadPlan {
+        if model.isSystem { return Self.systemPlan }
         var allowance = (budget ?? currentBudget()).allowance
         if keepingLoaded {
             for other in loaded.values where other.id != model.id {
@@ -140,6 +141,16 @@ final class InferenceEngine {
             return try await task.value
         }
         guard loadingModelID == nil else { throw InferenceError.busy }
+
+        // Apple's on-device model: iOS loads and manages it, so there's no file or memory plan.
+        if model.isSystem {
+            if case .unavailable(let reason) = AppleFoundationBackend.availability {
+                throw InferenceError.loadFailed(reason)
+            }
+            let entry = LoadedModel(id: model.id, backend: AppleFoundationBackend(), plan: Self.systemPlan, lastUsed: .now)
+            loaded[model.id] = entry
+            return entry
+        }
 
         let fileURL = store.fileURL(for: model)
         guard FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false)) else {
@@ -384,6 +395,12 @@ final class InferenceEngine {
     func resetPromptCache(for modelID: String) async {
         await loaded[modelID]?.backend.resetCache()
     }
+
+    /// The plan for a model built into the system: its fixed context and no memory of OMNIA's.
+    static let systemPlan = LoadPlan(
+        contextLength: AppleFoundationBackend.contextSize, kvType: .f16,
+        estimate: MemoryEstimate(weights: 0, kvCache: 0, compute: 0, overhead: 0, contextLength: AppleFoundationBackend.contextSize, kvType: .f16),
+        fits: true, requestedContext: AppleFoundationBackend.contextSize, maxContextThatFits: AppleFoundationBackend.contextSize)
 
     // MARK: Images
 

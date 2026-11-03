@@ -31,7 +31,9 @@ struct OMNIAApp: App {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .background: services.engine.sceneDidEnterBackground()
-            case .active: services.engine.sceneWillEnterForeground()
+            case .active:
+                services.engine.sceneWillEnterForeground()
+                services.store.refreshSystemModels()
             default: break
             }
         }

@@ -152,7 +152,7 @@ enum ModelCatalog {
             "qwen35": "Qwen3.5 hybrid", "qwen35moe": "Qwen3.5 MoE", "qwen3": "Qwen3", "qwen3moe": "Qwen3 MoE",
             "gemma4": "Gemma 4", "gemma3": "Gemma 3", "gpt-oss": "gpt-oss MoE", "lfm2moe": "LFM2 MoE", "lfm2": "LFM2",
             "lfm3": "LFM3 hybrid", "muse-glimmer": "Muse Glimmer", "mistral3": "Mistral 3", "llama": "Llama",
-            "granite": "Granite", "granitehybrid": "Granite hybrid", "phi3": "Phi"
+            "granite": "Granite", "granitehybrid": "Granite hybrid", "phi3": "Phi", "apple-foundation": "Apple Foundation Model"
         ]
         return names[architecture] ?? architecture
     }

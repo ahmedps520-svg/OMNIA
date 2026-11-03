@@ -207,7 +207,9 @@ struct InstalledModelRow: View {
                         Pill(text: "Images", symbol: "photo")
                     }
                 }
-                Text("\(model.parameterLabel) · \(model.quantization ?? "GGUF") · \(ModelCatalog.architectureName(model.facts.architecture)) · \(ByteFormat.file(model.sizeBytes))")
+                Text(model.isSystem
+                     ? "Built into iOS · \(ByteFormat.tokens(model.facts.trainContext)) context · nothing to download"
+                     : "\(model.parameterLabel) · \(model.quantization ?? "GGUF") · \(ModelCatalog.architectureName(model.facts.architecture)) · \(ByteFormat.file(model.sizeBytes))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

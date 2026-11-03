@@ -164,6 +164,7 @@ final class ModelStore {
     }
 
     func delete(_ model: InstalledModel) async {
+        guard !model.isSystem else { return }
         await willDeleteModel?(model)
         try? FileManager.default.removeItem(at: fileURL(for: model))
         models.removeAll { $0.id == model.id }
@@ -230,13 +231,25 @@ final class ModelStore {
         try? FileManager.default.removeItem(at: modelsDirectory.appending(path: relativePath))
     }
 
+    /// Lists models built into the system (Apple's on-device model) while they're available.
+    /// They aren't written to the registry.
+    func refreshSystemModels() {
+        let available = AppleFoundationBackend.availability == .available
+        let listed = models.contains { $0.id == AppleFoundationBackend.modelID }
+        if available, !listed {
+            models.append(.appleFoundation)
+        } else if !available, listed {
+            models.removeAll { $0.isSystem }
+        }
+    }
+
     // MARK: Maintenance
 
     /// Drops registry entries whose files disappeared and registers stray GGUF files. Image
     /// encoders are never models: one no model uses is a leftover and is deleted.
     func reconcile() {
         let fileManager = FileManager.default
-        let missing = models.filter { !fileManager.fileExists(atPath: fileURL(for: $0).path(percentEncoded: false)) }
+        let missing = models.filter { !$0.isSystem && !fileManager.fileExists(atPath: fileURL(for: $0).path(percentEncoded: false)) }
         if !missing.isEmpty {
             storeLog.warning("Removing \(missing.count) registry entries with missing files")
             models.removeAll { model in missing.contains { $0.id == model.id } }
@@ -301,7 +314,7 @@ final class ModelStore {
 
     private func save() {
         do {
-            let data = try JSONEncoder.omnia.encode(models)
+            let data = try JSONEncoder.omnia.encode(models.filter { !$0.isSystem })
             try data.write(to: registryURL, options: .atomic)
         } catch {
             storeLog.error("Registry save failed: \(error.localizedDescription, privacy: .public)")

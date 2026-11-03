@@ -9,7 +9,8 @@ enum VerificationState: String, Codable, Sendable {
 }
 
 enum ModelSource: String, Codable, Sendable {
-    case catalog, huggingFace, imported
+    /// `system` is a model built into iOS (Apple's on-device model), not a file.
+    case catalog, huggingFace, imported, system
 }
 
 /// Per-model settings that override the global defaults.
