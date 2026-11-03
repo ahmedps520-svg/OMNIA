@@ -17,6 +17,10 @@ final class AppServices {
     let engine: InferenceEngine
     let container: ModelContainer
     let semanticIndex: SemanticIndex
+    let python: PythonRuntime
+    let codeRunner: CodeRunner
+    let webReader: WebReader
+    let browser: BrowserSession
     let chat: ChatService
     let compare: CompareService
 
@@ -33,7 +37,12 @@ final class AppServices {
         downloads = DownloadManager(store: store, semanticIndex: semanticIndex, settings: settings)
         importer = ModelImporter(store: store)
         engine = InferenceEngine(store: store, settings: settings, device: device, monitor: monitor)
-        chat = ChatService(engine: engine, store: store, settings: settings, container: container, semanticIndex: semanticIndex)
+        python = PythonRuntime(settings: settings)
+        codeRunner = CodeRunner(python: python)
+        webReader = WebReader(settings: settings)
+        browser = BrowserSession(settings: settings)
+        chat = ChatService(engine: engine, store: store, settings: settings, container: container, semanticIndex: semanticIndex,
+                           codeRunner: codeRunner, webReader: webReader)
         compare = CompareService(engine: engine, store: store, settings: settings, container: container)
 
         downloads.onInstalled = { [weak self] model in

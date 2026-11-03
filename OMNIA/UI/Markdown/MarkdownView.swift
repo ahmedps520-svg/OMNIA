@@ -112,17 +112,33 @@ struct CodeBlockView: View {
     let language: String
     let code: String
     var scale: Double = 1
+    /// Offers Preview or Run in the conversation's workspace (not inside the workspace itself).
+    var showsWorkspaceActions = true
 
     @State private var copied = false
     @ScaledMetric(relativeTo: .body) private var codeSize: CGFloat = 14
+    @Environment(WorkspaceController.self) private var workspace: WorkspaceController?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            HStack(spacing: 14) {
                 Text(language.isEmpty ? "code" : language.lowercased())
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                 Spacer()
+                if showsWorkspaceActions, let workspace {
+                    let kind = CodeArtifact.Kind(language: language, code: code)
+                    if kind.isPreviewable || kind.isRunnable {
+                        Button {
+                            workspace.show(language: language, code: code)
+                        } label: {
+                            Label(kind.isRunnable ? "Run" : "Preview", systemImage: kind.isRunnable ? "play.fill" : "eye")
+                                .font(.caption.weight(.medium))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.tint)
+                    }
+                }
                 Button {
                     UIPasteboard.general.string = code
                     copied = true

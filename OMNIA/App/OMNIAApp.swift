@@ -21,6 +21,7 @@ struct OMNIAApp: App {
                 .environment(services.chat)
                 .environment(services.compare)
                 .environment(services.semanticIndex)
+                .environment(services.python)
                 .modelContainer(services.container)
                 .onOpenURL { url in
                     guard url.isFileURL else { return }

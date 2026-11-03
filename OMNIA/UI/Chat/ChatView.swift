@@ -27,6 +27,7 @@ struct ChatView: View {
     @State private var showImporter = false
     @State private var showPhotoPicker = false
     @State private var photoSelection: [PhotosPickerItem] = []
+    @State private var workspace = WorkspaceController(browser: AppServices.shared.browser, runner: AppServices.shared.codeRunner)
     @State private var showExport = false
     @State private var attachmentError: String?
     @State private var editing: Message?
@@ -109,7 +110,27 @@ struct ChatView: View {
         }
         .onChange(of: conversation?.id) { _, _ in
             editing = nil
+            refreshWorkspace()
         }
+        .onChange(of: messages.count) { _, _ in refreshWorkspace() }
+        .onChange(of: isGenerating) { _, generating in
+            if !generating { refreshWorkspace() }
+        }
+        .onAppear {
+            refreshWorkspace()
+            workspace.attach = { record in attachments.append(record) }
+        }
+        .environment(workspace)
+        .inspector(isPresented: $workspace.isPresented) {
+            WorkspaceView(controller: workspace)
+                .inspectorColumnWidth(min: 340, ideal: 460, max: 760)
+        }
+    }
+
+    /// The conversation's finished code blocks, for the workspace's Code tab.
+    private func refreshWorkspace() {
+        let finished = messages.filter { $0.id != chat.live?.messageID }
+        workspace.artifacts = CodeArtifact.extract(from: finished)
     }
 
     // MARK: Transcript
@@ -169,6 +190,14 @@ struct ChatView: View {
             }
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
+            Button {
+                workspace.isPresented.toggle()
+            } label: {
+                Image(systemName: "sidebar.trailing")
+            }
+            .accessibilityLabel("Workspace")
+            .help("Code, previews and the browser")
+            .keyboardShortcut("\\", modifiers: [.command, .option])
             if conversation != nil {
                 Button {
                     showSettings = true

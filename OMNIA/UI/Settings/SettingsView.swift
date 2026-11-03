@@ -83,7 +83,18 @@ struct SettingsView: View {
             } header: {
                 Text("Inference")
             } footer: {
-                Text("Context and KV cache changes apply the next time a model loads. Automatic picks the longest context and highest cache precision that fit in memory; quantized caches require flash attention. Remember long chats saves a long conversation's model memory, so reopening it continues instantly instead of re-reading it. Tools let models calculate exactly, check the date and search attached documents.")
+                Text("Context and KV cache changes apply the next time a model loads. Automatic picks the longest context and highest cache precision that fit in memory; quantized caches require flash attention. Remember long chats saves a long conversation's model memory, so reopening it continues instantly instead of re-reading it. Tools let models calculate exactly, check the date, run code in a sandbox and search attached documents.")
+            }
+
+            // MARK: Workspace
+            Section {
+                Toggle("Web access in new conversations", isOn: $settings.webAccessByDefault)
+                    .disabled(settings.offlineOnly)
+                PythonRuntimeRow()
+            } header: {
+                Text("Workspace")
+            } footer: {
+                Text("With web access the model can search the web (DuckDuckGo) and read pages; each conversation can turn it on or off, and it's always off in Offline-only mode. Python (Pyodide \(PythonRuntime.version), Mozilla Public License 2.0) runs code from the workspace and the model offline, with the standard library and no network access.")
             }
 
             // MARK: Memory & performance

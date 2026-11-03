@@ -56,14 +56,20 @@ final class ChatService {
     private let container: ModelContainer
     /// Finds document passages by meaning, when the library has an embedding model.
     private let semanticIndex: SemanticIndex?
+    /// Runs the code the model writes (run_code), in a sandbox without network.
+    private let codeRunner: CodeRunner?
+    /// Searches and reads the web for the model, when a conversation allows it.
+    private let webReader: WebReader?
 
     init(engine: InferenceEngine, store: ModelStore, settings: AppSettings, container: ModelContainer,
-         semanticIndex: SemanticIndex? = nil) {
+         semanticIndex: SemanticIndex? = nil, codeRunner: CodeRunner? = nil, webReader: WebReader? = nil) {
         self.engine = engine
         self.store = store
         self.settings = settings
         self.container = container
         self.semanticIndex = semanticIndex
+        self.codeRunner = codeRunner
+        self.webReader = webReader
     }
 
     private var context: ModelContext { container.mainContext }
@@ -436,9 +442,21 @@ final class ChatService {
         conversation.toolsEnabled ?? settings.toolsEnabledByDefault
     }
 
-    /// The tools offered in this conversation. Document search appears when documents are attached.
+    /// Web search and page reading, which only happen when allowed and never in Offline-only mode.
+    func webAccessEnabled(for conversation: Conversation) -> Bool {
+        !settings.offlineOnly && (conversation.webAccessEnabled ?? settings.webAccessByDefault)
+    }
+
+    /// The tools offered in this conversation. Document search appears when documents are
+    /// attached, web search and page reading when web access is on.
     private func availableTools(for conversation: Conversation) -> [any ChatTool] {
         var tools: [any ChatTool] = [CalculatorTool(), DateTimeTool()]
+        if let codeRunner {
+            tools.append(RunCodeTool(runner: codeRunner, languages: CodeRunner.Language.allCases.filter { codeRunner.isAvailable($0) }))
+        }
+        if let webReader, webAccessEnabled(for: conversation) {
+            tools += [WebSearchTool(reader: webReader), OpenURLTool(reader: webReader)] as [any ChatTool]
+        }
         if !conversation.documentIDs.isEmpty {
             let ids = conversation.documentIDs
             let descriptor = FetchDescriptor<KnowledgeDocument>(predicate: #Predicate { ids.contains($0.id) })

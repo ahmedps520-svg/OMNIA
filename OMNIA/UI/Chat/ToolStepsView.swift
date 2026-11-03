@@ -27,6 +27,17 @@ struct ToolStepsView: View {
 struct ToolStepRow: View {
     let step: ToolStep
     @State private var expanded = false
+    @Environment(WorkspaceController.self) private var workspace: WorkspaceController?
+
+    /// The page a web step read, or the results page a person would see for its search.
+    private var webPage: URL? {
+        guard !step.failed, let subject = step.subject else { return nil }
+        switch step.name {
+        case "open_url": return WebReader.webURL(subject)
+        case "web_search": return WebReader.searchPage(subject)
+        default: return nil
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -67,9 +78,18 @@ struct ToolStepRow: View {
                 VStack(alignment: .leading, spacing: 10) {
                     detail("Arguments", step.argumentsJSON)
                     detail(step.failed ? "Error" : "Result", step.result)
-                    Text("Took \(ByteFormat.seconds(step.duration))")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                    HStack {
+                        Text("Took \(ByteFormat.seconds(step.duration))")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                        Spacer()
+                        if let webPage, let workspace {
+                            Button("Open in Browser", systemImage: "safari") { workspace.openInBrowser(webPage) }
+                                .font(.caption.weight(.medium))
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.tint)
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)

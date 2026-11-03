@@ -64,17 +64,19 @@ A small "draft" model guesses several tokens ahead and the big model checks them
 - Used for the excerpts placed in the prompt and by the search-documents tool. Without the model, or when it can't run (background, low memory), search falls back to keywords.
 - Tests: fusion ranking, vector storage, and real embeddings and indexing with BGE small on CI.
 
-## Stage 6: Workspace panel, browser and web access
+## Stage 6: Workspace panel, browser and web access (implemented)
 
 A panel beside the chat on iPad (a sheet on iPhone), with three tabs:
 
-- **Preview** runs the selected reply's code: HTML with its CSS and JavaScript, SVG, Markdown and JSON. A console shows logs and errors, and **Run** also works for plain JavaScript and **Python**. Python uses Pyodide, bundled so it works offline. Previews are sandboxed and have no network unless you allow it.
-- **Code** lists every code block in the conversation. Copy, save to Files, or open any of them in Preview.
-- **Browser** is a full in-app browser with an address bar, back/forward and share. "Ask about this page" sends the page's text to the chat.
+- **Preview** shows the selected block: HTML with the CSS and JavaScript from the same reply, SVG, Markdown and JSON, with a console for logs and errors. **Run** works for JavaScript and **Python**. Programs run in a Web Worker in WebKit's sandbox, with no network and a time limit. Python is Pyodide 314.0.7, an optional 13.5 MB download (SHA-256 pinned) that then works offline. Previews of pages may load web resources, except in Offline-only mode.
+- **Code** lists every code block in the conversation. Copy, share or save to Files, or open any of them in Preview. Code blocks in the chat have Preview and Run buttons too.
+- **Browser** is an in-app browser with an address bar, back/forward, reload and share. "Ask about this page" attaches the page's text to your message.
 
-**AI web access** is off by default and blocked by Offline-only mode. When it's on, the model can search the web and open pages. Every page it opens appears in the Browser tab, so you can see exactly what it read.
+**AI web access** is off by default (Settings › Workspace, and per conversation) and blocked by Offline-only mode. When it's on, the model can search the web (DuckDuckGo) and open pages, read in a separate offscreen web view. Every page or search it used can be opened in the Browser tab from its step in the reply.
 
-The model can also run code it wrote and read back the output or errors, so it can fix its own mistakes.
+The model can also run the code it writes (`run_code`) and read back the output or errors, so it can fix its own mistakes.
+
+Tests: code extraction and previews, web helpers, JavaScript runs (output, errors, top-level await, runaway programs), and Python end to end with Pyodide on CI.
 
 ## Stage 7: More engines
 

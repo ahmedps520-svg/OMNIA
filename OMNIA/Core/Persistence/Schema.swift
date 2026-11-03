@@ -31,6 +31,8 @@ final class Conversation {
     var thinkingEnabled: Bool?
     /// nil follows Settings › Tools.
     var toolsEnabled: Bool?
+    /// The model may search the web and read pages; nil follows Settings › Workspace.
+    var webAccessEnabled: Bool?
     /// "json" for JSON mode; nil for normal text.
     var responseFormatRaw: String?
     var folder: Folder?

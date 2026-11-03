@@ -63,11 +63,14 @@ struct ConversationSettingsSheet: View {
                     Toggle("Tools", isOn: Binding(get: { chat.toolsEnabled(for: conversation) },
                                                   set: { conversation.toolsEnabled = $0 }))
                         .disabled(conversation.jsonMode)
+                    Toggle("Web access", isOn: Binding(get: { chat.webAccessEnabled(for: conversation) },
+                                                       set: { conversation.webAccessEnabled = $0 }))
+                        .disabled(conversation.jsonMode || !chat.toolsEnabled(for: conversation) || settings.offlineOnly)
                     Toggle("JSON mode", isOn: $conversation.jsonMode)
                 } header: {
                     Text("Capabilities")
                 } footer: {
-                    Text("Tools let the model calculate exactly, check the date and time, and search the documents attached below. JSON mode makes every reply a single JSON object; tools and reasoning are off while it's on.")
+                    Text("Tools let the model calculate exactly, check the date and time, run the code it writes (in a sandbox without network) and search the documents attached below. With web access it can also search the web and read pages, which sends your search terms to DuckDuckGo and the pages' sites\(settings.offlineOnly ? "; it's off in Offline-only mode" : ""). JSON mode makes every reply a single JSON object; tools and reasoning are off while it's on.")
                 }
 
                 Section {

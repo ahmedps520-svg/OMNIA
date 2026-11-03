@@ -187,6 +187,8 @@ final class AppSettings {
     var conversationMemoryLimitGB: Double { didSet { save(conversationMemoryLimitGB, "conversationMemoryLimitGB") } }
     /// New conversations let the model use tools (calculator, date, documents…).
     var toolsEnabledByDefault: Bool { didSet { save(toolsEnabledByDefault, "toolsEnabledByDefault") } }
+    /// New conversations let the model search the web and read pages (off unless chosen).
+    var webAccessByDefault: Bool { didSet { save(webAccessByDefault, "webAccessByDefault") } }
 
     // Memory & performance
     var memorySafety: MemorySafety { didSet { save(memorySafety.rawValue, "memorySafety") } }
@@ -229,6 +231,7 @@ final class AppSettings {
         rememberLongChats = defaults.object(forKey: "rememberLongChats") as? Bool ?? true
         conversationMemoryLimitGB = defaults.object(forKey: "conversationMemoryLimitGB") as? Double ?? 4
         toolsEnabledByDefault = defaults.object(forKey: "toolsEnabledByDefault") as? Bool ?? true
+        webAccessByDefault = defaults.object(forKey: "webAccessByDefault") as? Bool ?? false
 
         memorySafety = MemorySafety(rawValue: defaults.string(forKey: "memorySafety") ?? "") ?? .balanced
         profilePreference = ProfilePreference(rawValue: defaults.string(forKey: "profilePreference") ?? "") ?? .automatic
