@@ -89,6 +89,14 @@ enum WebSandbox {
         return configuration
     }
 
+    /// What went wrong in a page script: the exception's message rather than WebKit's
+    /// "A JavaScript exception occurred".
+    static func message(for error: Error) -> String {
+        let info = (error as NSError).userInfo
+        if let message = info["WKJavaScriptExceptionMessage"] as? String, !message.isEmpty { return message }
+        return error.localizedDescription
+    }
+
     /// Detaches the console so the page and the sink can be released.
     static func release(_ webView: WKWebView) {
         webView.stopLoading()

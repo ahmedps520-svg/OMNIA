@@ -47,7 +47,7 @@ final class WebReader {
         const root = document.querySelector('article, main, [role=main]') || document.body;
         return { title: document.title || '', url: location.href, text: root ? root.innerText : '' };
         """
-        let reply = try? await webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page)
+        let reply = try? await webView.callAsyncJavaScript(script, arguments: [:], in: nil, contentWorld: .page)
         let fields = reply as? [String: Any] ?? [:]
         let text = Self.tidy(fields["text"] as? String ?? "")
         guard !text.isEmpty else {
@@ -70,7 +70,7 @@ final class WebReader {
                    snippet: ((r.querySelector('.result__snippet') || {}).innerText || '').trim() };
         }).filter(r => r.url).slice(0, 8);
         """
-        let reply = try? await webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page)
+        let reply = try? await webView.callAsyncJavaScript(script, arguments: [:], in: nil, contentWorld: .page)
         let results = (reply as? [[String: Any]] ?? []).compactMap { fields -> SearchResult? in
             guard let link = (fields["url"] as? String).flatMap(URL.init(string:)) else { return nil }
             return SearchResult(title: fields["title"] as? String ?? "", url: Self.resolveRedirect(link),

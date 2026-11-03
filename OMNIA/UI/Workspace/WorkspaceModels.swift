@@ -77,7 +77,7 @@ final class BrowserSession: NSObject, WKNavigationDelegate, WKUIDelegate {
         const root = document.querySelector('article, main, [role=main]') || document.body;
         return { title: document.title || '', text: root ? root.innerText : '' };
         """
-        guard let url, let reply = try? await webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page),
+        guard let url, let reply = try? await webView.callAsyncJavaScript(script, arguments: [:], in: nil, contentWorld: .page),
               let fields = reply as? [String: Any] else { return nil }
         let text = WebReader.tidy(fields["text"] as? String ?? "")
         guard !text.isEmpty else { return nil }

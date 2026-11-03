@@ -33,7 +33,6 @@ final class CodeRunner {
 
     let python: PythonRuntime
     private var pythonPage: WKWebView?
-    private let pythonConsole = ConsoleSink()
 
     init(python: PythonRuntime) {
         self.python = python
@@ -52,8 +51,8 @@ final class CodeRunner {
 
     // MARK: JavaScript
 
-    /// The worker evaluates the program as a script, so its last expression is the result;
-    /// a program using top-level await runs as the body of an async function.
+    /// The worker evaluates the program as a script, so its last expression is the result. A
+    /// program using top-level await, which a script can't, runs as the body of an async function.
     private static let javaScriptWorker = #"""
     const text = (v) => { if (typeof v === 'string') return v; try { return JSON.stringify(v); } catch (_) { return String(v); } };
     for (const level of ['log', 'info', 'warn', 'error', 'debug']) {
@@ -66,41 +65,43 @@ final class CodeRunner {
         try {
           value = (0, eval)(code);
         } catch (e) {
-          if (!(e instanceof SyntaxError) || !/await/.test(String(e.message))) throw e;
+          if (!(e instanceof SyntaxError) || !/\bawait\b/.test(code)) throw e;
           value = (0, eval)('(async () => {\n' + code + '\n})()');
         }
         if (value instanceof Promise) value = await value;
         postMessage({ type: 'done', ok: true,
                       value: value === undefined ? null : (typeof value === 'string' ? value : (() => { try { return JSON.stringify(value, null, 2); } catch (_) { return String(value); } })()) });
       } catch (e) {
-        postMessage({ type: 'done', ok: false, error: String((e && e.stack) || e) });
+        // JavaScriptCore's stack lists frames without the message, so the error leads.
+        postMessage({ type: 'done', ok: false, error: String(e) + (e && e.line ? ' (line ' + e.line + ')' : '') });
       }
     };
     """#
 
-    /// Starts the worker, forwards its console, and ends it at the time limit.
+    /// Starts the worker, keeps its console, and ends it at the time limit. The console comes
+    /// back with the result, so none of it can arrive after the run is over.
     private static let javaScriptHost = """
     const worker = new Worker(URL.createObjectURL(new Blob([source], { type: 'text/javascript' })));
+    const lines = [];
     return await new Promise((resolve) => {
-      const finish = (result) => { clearTimeout(timer); worker.terminate(); resolve(result); };
+      const finish = (result) => { clearTimeout(timer); worker.terminate(); resolve(Object.assign({}, result, { console: lines })); };
       const timer = setTimeout(() => finish({ ok: false, timedOut: true }), Number(timeoutMs));
       worker.onmessage = (event) => {
         const message = event.data;
         if (message.type === 'console') {
-          window.webkit.messageHandlers.omniaConsole.postMessage({ level: message.level, text: String(message.text).slice(0, 4000) });
+          if (lines.length < maxLines) lines.push({ level: message.level, text: String(message.text).slice(0, 4000) });
         } else {
           finish(message);
         }
       };
-      worker.onerror = (event) => finish({ ok: false, error: event.message || 'The program failed.' });
+      worker.onerror = (event) => finish({ ok: false, error: event.message || 'The program could not start.' });
       worker.postMessage(code);
     });
     """
 
     private func runJavaScript(_ code: String, timeout: Duration) async -> Result {
         let started = ContinuousClock.now
-        let console = ConsoleSink()
-        let configuration = await WebSandbox.configuration(console: console, blockNetwork: true)
+        let configuration = await WebSandbox.configuration(console: nil, blockNetwork: true)
         let webView = WKWebView(frame: .zero, configuration: configuration)
         defer { WebSandbox.release(webView) }
         if let error = await PageLoader().load({ $0.loadHTMLString("<!doctype html><meta charset=utf-8><body></body>", baseURL: nil) }, in: webView) {
@@ -108,9 +109,9 @@ final class CodeRunner {
         }
         let outcome = await Self.evaluate(Self.javaScriptHost,
                                           arguments: ["source": Self.javaScriptWorker, "code": code,
-                                                      "timeoutMs": String(Self.milliseconds(timeout))],
+                                                      "timeoutMs": Self.milliseconds(timeout), "maxLines": WebSandbox.maxConsoleLines],
                                           in: webView, limit: timeout + .seconds(5))
-        return Self.result(outcome, console: console.lines, started: started)
+        return Self.result(outcome, started: started)
     }
 
     // MARK: Python
@@ -120,19 +121,20 @@ final class CodeRunner {
     private static let pythonHost = """
     // A new worker first loads Pyodide, which takes a few seconds: that isn't held against the program.
     const fresh = !globalThis.omniaPython;
-    if (fresh) globalThis.omniaPython = new Worker('worker.js');
+    if (fresh) globalThis.omniaPython = new Worker('worker.js', { type: 'module' });
     const worker = globalThis.omniaPython;
+    const lines = [];
     return await new Promise((resolve) => {
       const finish = (result, stop) => {
         clearTimeout(timer);
         if (stop) { worker.terminate(); globalThis.omniaPython = null; }
-        resolve(result);
+        resolve(Object.assign({}, result, { console: lines }));
       };
       const timer = setTimeout(() => finish({ ok: false, timedOut: true }, true), Number(timeoutMs) + (fresh ? 20000 : 0));
       worker.onmessage = (event) => {
         const message = event.data;
         if (message.type === 'console') {
-          window.webkit.messageHandlers.omniaConsole.postMessage({ level: message.level, text: String(message.text).slice(0, 4000) });
+          if (lines.length < maxLines) lines.push({ level: message.level, text: String(message.text).slice(0, 4000) });
         } else {
           finish(message, false);
         }
@@ -151,7 +153,7 @@ final class CodeRunner {
         if let page = pythonPage {
             webView = page
         } else {
-            let configuration = await WebSandbox.configuration(console: pythonConsole, blockNetwork: true, schemeHandler: handler)
+            let configuration = await WebSandbox.configuration(console: nil, blockNetwork: true, schemeHandler: handler)
             let page = WKWebView(frame: .zero, configuration: configuration)
             if let error = await PageLoader().load({ $0.load(URLRequest(url: RuntimeSchemeHandler.pageURL)) }, in: page) {
                 WebSandbox.release(page)
@@ -160,20 +162,21 @@ final class CodeRunner {
             pythonPage = page
             webView = page
         }
-        pythonConsole.clear()
-        let outcome = await Self.evaluate(Self.pythonHost, arguments: ["code": code, "timeoutMs": String(Self.milliseconds(timeout))],
+        let outcome = await Self.evaluate(Self.pythonHost,
+                                          arguments: ["code": code, "timeoutMs": Self.milliseconds(timeout),
+                                                      "maxLines": WebSandbox.maxConsoleLines],
                                           in: webView, limit: timeout + .seconds(30))
         if case .failed = outcome {
             WebSandbox.release(webView)
             pythonPage = nil
         }
-        return Self.result(outcome, console: pythonConsole.lines, started: started)
+        return Self.result(outcome, started: started)
     }
 
     // MARK: Evaluation
 
     private enum Outcome: Sendable {
-        case finished(ok: Bool, value: String?, error: String?, timedOut: Bool)
+        case finished(ok: Bool, value: String?, error: String?, timedOut: Bool, console: [ConsoleLine])
         case failed(String)
     }
 
@@ -192,20 +195,19 @@ final class CodeRunner {
         }
     }
 
-    /// Runs the host script. The script enforces the time limit itself; `limit` is a safety net
-    /// should the page stop responding.
-    private static func evaluate(_ script: String, arguments: [String: String], in webView: WKWebView,
+    /// Runs the host script and waits for the promise it returns. The script enforces the time
+    /// limit itself; `limit` is a safety net should the page stop responding.
+    private static func evaluate(_ script: String, arguments: [String: Any], in webView: WKWebView,
                                  limit: Duration) async -> Outcome {
         await withCheckedContinuation { continuation in
             let first = FirstResult(continuation)
             Task { @MainActor in
                 do {
-                    let reply = try await webView.callAsyncJavaScript(script, arguments: arguments, in: nil, in: .page)
-                    let fields = reply as? [String: Any] ?? [:]
-                    first.resume(.finished(ok: fields["ok"] as? Bool ?? false, value: fields["value"] as? String,
-                                           error: fields["error"] as? String, timedOut: fields["timedOut"] as? Bool ?? false))
+                    // `contentWorld:` is the async variant, which waits for the promise.
+                    let reply = try await webView.callAsyncJavaScript(script, arguments: arguments, in: nil, contentWorld: .page)
+                    first.resume(outcome(from: reply))
                 } catch {
-                    first.resume(.failed(error.localizedDescription))
+                    first.resume(.failed(WebSandbox.message(for: error)))
                 }
             }
             Task { @MainActor in
@@ -215,10 +217,23 @@ final class CodeRunner {
         }
     }
 
-    private static func result(_ outcome: Outcome, console: [ConsoleLine], started: ContinuousClock.Instant) -> Result {
-        var result = Result(console: console, duration: started.secondsElapsed)
+    private static func outcome(from reply: Any?) -> Outcome {
+        guard let fields = reply as? [String: Any] else {
+            return .failed("The sandbox returned no result.")
+        }
+        let console = (fields["console"] as? [[String: Any]] ?? []).compactMap { line -> ConsoleLine? in
+            guard let text = line["text"] as? String else { return nil }
+            return ConsoleLine(level: ConsoleLine.Level(rawValue: line["level"] as? String ?? "") ?? .log, text: text)
+        }
+        return .finished(ok: fields["ok"] as? Bool ?? false, value: fields["value"] as? String,
+                         error: fields["error"] as? String, timedOut: fields["timedOut"] as? Bool ?? false, console: console)
+    }
+
+    private static func result(_ outcome: Outcome, started: ContinuousClock.Instant) -> Result {
+        var result = Result(console: [], duration: started.secondsElapsed)
         switch outcome {
-        case let .finished(ok, value, error, timedOut):
+        case let .finished(ok, value, error, timedOut, console):
+            result.console = console
             if timedOut {
                 result.timedOut = true
             } else if ok {

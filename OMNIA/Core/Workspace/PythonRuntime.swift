@@ -130,15 +130,17 @@ final class RuntimeSchemeHandler: NSObject, WKURLSchemeHandler {
     """
 
     /// Runs Python off the page's thread, so a program that never ends can be stopped by
-    /// terminating the worker. Pyodide stays loaded between runs.
+    /// terminating the worker. Pyodide stays loaded between runs. It's a module worker: Pyodide
+    /// refuses classic ones, and loads its WebAssembly glue as a module.
     private static let worker = """
-    importScripts('pyodide.js');
     let pyodide = null;
     const forward = (level) => (text) => postMessage({ type: 'console', level, text });
-    onmessage = async (event) => {
+    self.onmessage = async (event) => {
       try {
         if (!pyodide) {
-          pyodide = await loadPyodide({ indexURL: 'omnia-runtime://pyodide/' });
+          // pyodide.js defines globalThis.loadPyodide.
+          await import('./pyodide.js');
+          pyodide = await globalThis.loadPyodide({ indexURL: 'omnia-runtime://pyodide/' });
           pyodide.setStdout({ batched: forward('log') });
           pyodide.setStderr({ batched: forward('error') });
         }

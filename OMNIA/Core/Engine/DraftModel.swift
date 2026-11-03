@@ -101,9 +101,16 @@ final class DraftModel {
         slidingWindow = Int(llama_model_n_swa(loaded))
     }
 
+    /// Tokens whose text may differ between otherwise identical vocabularies. Converters have
+    /// changed how a few rare tokens are stored: one TinyStories conversion keeps U+FEFF as an
+    /// empty string. The main model checks every drafted token by id, so a differing token is
+    /// only ever rejected; it can't change the reply.
+    static let toleratedTokenDifferences = 8
+
     /// llama.cpp's rule for draft models (`common_speculative_are_compatible`): the same tokenizer
     /// type, the same start and end tokens, vocabulary sizes within 128 of each other, and the same
-    /// text for every token from id 5 on. Returns why they differ, or nil when compatible.
+    /// text for every token from id 5 on, give or take `toleratedTokenDifferences`. Returns why
+    /// they differ, or nil when compatible.
     static func incompatibility(target: OpaquePointer, draft: OpaquePointer) -> String? {
         if llama_vocab_type(target) != llama_vocab_type(draft) { return "it uses a different kind of tokenizer" }
         let addsBOS = llama_vocab_get_add_bos(target)
@@ -121,9 +128,12 @@ final class DraftModel {
         }
         let shared = min(targetCount, draftCount)
         guard shared > 5 else { return nil }
+        var differing: [Int32] = []
         for id in Int32(5)..<shared {
-            guard let a = llama_vocab_get_text(target, id), let b = llama_vocab_get_text(draft, id), strcmp(a, b) == 0 else {
-                return "token \(id) differs"
+            if let a = llama_vocab_get_text(target, id), let b = llama_vocab_get_text(draft, id), strcmp(a, b) == 0 { continue }
+            differing.append(id)
+            if differing.count > toleratedTokenDifferences {
+                return "its tokens differ, starting with token \(differing[0])"
             }
         }
         return nil
