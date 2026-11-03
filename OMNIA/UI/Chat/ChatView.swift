@@ -29,6 +29,7 @@ struct ChatView: View {
     @State private var photoSelection: [PhotosPickerItem] = []
     @State private var workspace = WorkspaceController(browser: AppServices.shared.browser, runner: AppServices.shared.codeRunner)
     @State private var showExport = false
+    @State private var showModelSwitcher = false
     @State private var attachmentError: String?
     @State private var editing: Message?
     @State private var editText = ""
@@ -97,6 +98,10 @@ struct ChatView: View {
         .sheet(isPresented: $showExport) {
             if let conversation { ExportSheet(conversations: [conversation]) }
         }
+        .sheet(isPresented: $showModelSwitcher) {
+            ModelSwitcher(selectedID: activeModel?.id, onSelect: choose)
+        }
+        .focusedSceneValue(\.chatCommands, ChatCommands(switchModel: { showModelSwitcher = true }))
         .fileImporter(isPresented: $showImporter, allowedContentTypes: DocumentExtractor.supportedTypes + ImageInput.supportedTypes,
                       allowsMultipleSelection: true) { result in
             handleImport(result)
@@ -179,13 +184,7 @@ struct ChatView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .principal) {
-            ModelPickerMenu(selectedID: activeModel?.id) { model in
-                if let conversation {
-                    chat.setModel(model, for: conversation)
-                } else {
-                    draftModelID = model.id
-                }
-            } onManage: {
+            ModelPickerMenu(selectedID: activeModel?.id, onSelect: choose) {
                 selection = .section(.models)
             }
         }
@@ -243,6 +242,15 @@ struct ChatView: View {
         }
         guard let stats = messages.last(where: { $0.stats != nil })?.stats else { return nil }
         return stats.contextUtilization
+    }
+
+    /// The model for this conversation, or for the next message of a new one.
+    private func choose(_ model: InstalledModel) {
+        if let conversation {
+            chat.setModel(model, for: conversation)
+        } else {
+            draftModelID = model.id
+        }
     }
 
     private func send() {

@@ -6,12 +6,20 @@ struct RootView: View {
     @Environment(InferenceEngine.self) private var engine
     @Environment(ModelImporter.self) private var importer
 
-    @State private var selection: SidebarSelection? = .section(.home)
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var selection: SidebarSelection?
+    @State private var columnVisibility: NavigationSplitViewVisibility
     @State private var showOnboarding = false
     @State private var continueOnUnsupported = false
+    /// Bumped by ⌘F to put the cursor in the sidebar's search field.
+    @State private var searchRequest = 0
 
     private let device = AppServices.shared.device
+
+    /// A window opened for one conversation shows it full width, its sidebar a swipe away.
+    init(conversation: UUID? = nil) {
+        _selection = State(initialValue: conversation.map { .conversation($0) } ?? .section(.home))
+        _columnVisibility = State(initialValue: conversation == nil ? .all : .detailOnly)
+    }
 
     var body: some View {
         Group {
@@ -39,7 +47,7 @@ struct RootView: View {
 
     private var mainInterface: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView(selection: $selection)
+            SidebarView(selection: $selection, searchRequest: searchRequest)
                 .navigationSplitViewColumnWidth(min: 270, ideal: 300, max: 360)
         } detail: {
             NavigationStack {
@@ -72,6 +80,13 @@ struct RootView: View {
             }
         }
         .omniaAnimation(settings.animations, value: engine.notice)
+        .focusedSceneValue(\.windowCommands, WindowCommands(
+            newChat: { selection = .section(.chat) },
+            show: { selection = .section($0) },
+            searchConversations: {
+                columnVisibility = .all
+                searchRequest += 1
+            }))
     }
 
     /// Each section gets its own navigation stack; conversations share the chat stack.

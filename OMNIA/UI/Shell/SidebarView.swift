@@ -3,8 +3,13 @@ import SwiftUI
 
 struct SidebarView: View {
     @Binding var selection: SidebarSelection?
+    /// Changes when ⌘F asks for the search field.
+    var searchRequest = 0
 
     @Environment(\.modelContext) private var context
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
+    @FocusState private var searchFocused: Bool
     @Environment(ChatService.self) private var chat
     @Environment(InferenceEngine.self) private var engine
     @Environment(ConnectivityMonitor.self) private var connectivity
@@ -57,6 +62,8 @@ struct SidebarView: View {
         .scrollContentBackground(.hidden)
         .background(Theme.sidebar)
         .searchable(text: $search, placement: .sidebar, prompt: "Search conversations")
+        .searchFocused($searchFocused)
+        .onChange(of: searchRequest) { searchFocused = true }
         .onChange(of: search) { _, query in
             searchMatches = ConversationSearch.matches(query, in: context)
         }
@@ -102,8 +109,8 @@ struct SidebarView: View {
                     .frame(width: 36, height: 36)
             }
             .buttonStyle(.glass)
-            .keyboardShortcut("n", modifiers: .command)
             .accessibilityLabel("New Conversation")
+            .help("New chat (⌘N)")
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
@@ -159,6 +166,12 @@ struct SidebarView: View {
             .padding(.vertical, 2)
         }
         .contextMenu {
+            if supportsMultipleWindows {
+                Button("Open in New Window", systemImage: "macwindow.badge.plus") {
+                    openWindow(id: OMNIAApp.mainWindow, value: conversation.id)
+                }
+                Divider()
+            }
             Button(conversation.isPinned ? "Unpin" : "Pin", systemImage: conversation.isPinned ? "pin.slash" : "pin") {
                 conversation.isPinned.toggle()
                 chat.save()

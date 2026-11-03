@@ -1,5 +1,7 @@
 import Charts
+import CoreTransferable
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Live, measured hardware and inference statistics. Values iOS doesn't expose (such as GPU
 /// utilization or temperatures) are labelled as unavailable rather than estimated.
@@ -27,6 +29,15 @@ struct PerformanceView: View {
         }
         .background(Theme.canvas)
         .navigationTitle("Performance")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                ShareLink(item: DeviceReportFile(),
+                          preview: SharePreview("OMNIA Device Report", image: Image(systemName: "gauge.with.dots.needle.67percent"))) {
+                    Label("Export Device Report", systemImage: "square.and.arrow.up")
+                }
+                .help("Memory limits, model loads and speeds measured on this device, without any conversation content")
+            }
+        }
         .onAppear { monitor.setDetailedSampling(true) }
         .onDisappear { if !engine.isGenerating { monitor.setDetailedSampling(false) } }
     }
@@ -219,5 +230,15 @@ struct PerformanceView: View {
             }
             .surface()
         }
+    }
+}
+
+/// The device report as a JSON file, made when it's shared so it's current.
+struct DeviceReportFile: Transferable {
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .json) { _ in
+            try await MainActor.run { try DeviceReport.make().json() }
+        }
+        .suggestedFileName("OMNIA Device Report.json")
     }
 }
