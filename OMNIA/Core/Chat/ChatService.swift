@@ -24,9 +24,21 @@ final class ChatService {
         var startedAt = Date()
         var firstTokenAt: Date?
         var chunks = 0
+        /// Tools offered for this reply; their call markup is hidden from the text.
+        var toolsActive = false
+        /// Tool calls completed so far, and the tool running now ("Calculating").
+        var steps: [ToolStep] = []
+        var runningTool: String?
+        /// Reasoning from earlier rounds of a reply that used tools.
+        var priorReasoning: [String] = []
 
-        var displayContent: String { prefix + parsed.content }
+        var displayContent: String {
+            prefix + (toolsActive ? ToolCallParser.visibleText(parsed.content, streaming: true) : parsed.content)
+        }
     }
+
+    /// Generation rounds per reply; the last one offers no tools, so the model has to answer.
+    static let maxToolRounds = 6
 
     private(set) var live: LiveReply?
     /// Most recent error per conversation, shown inline in the chat.
@@ -35,6 +47,8 @@ final class ChatService {
     @ObservationIgnored private var generationTask: Task<Void, Never>?
     @ObservationIgnored private var lastParse = Date.distantPast
     @ObservationIgnored private var lastPersist = Date.distantPast
+    /// Set by Stop: no further tool rounds start after the current step.
+    @ObservationIgnored private var stopRequested = false
 
     private let engine: InferenceEngine
     private let store: ModelStore
@@ -89,6 +103,7 @@ final class ChatService {
 
     func delete(_ conversation: Conversation) {
         if live?.conversationID == conversation.id { stop() }
+        engine.conversationMemory.removeAll(conversationID: conversation.id)
         context.delete(conversation)
         save()
     }
@@ -157,6 +172,7 @@ final class ChatService {
     }
 
     func stop() {
+        stopRequested = true
         engine.stopGeneration()
     }
 
@@ -199,39 +215,95 @@ final class ChatService {
         let turns = buildTurns(for: conversation, excluding: reply, model: model, persona: persona, contextTokens: contextTokens)
         var request = GenerationRequest(turns: turns, assistantPrefix: prefix.isEmpty ? nil : prefix,
                                         sampling: SamplingParameters(generation), maxTokens: generation.maxOutputTokens)
+        // JSON mode needs the reply to be the object itself, so reasoning is switched off.
         if model.facts.thinkingToggle {
-            request.templateVariables = reasoningPreference(for: conversation, model: model).templateVariables
+            let reasoning = conversation.jsonMode ? ReasoningPreference.off : reasoningPreference(for: conversation, model: model)
+            request.templateVariables = reasoning.templateVariables
         }
+        if conversation.jsonMode { request.responseFormat = .json }
+        // Continuing a cut-off reply only extends its text: no new tool rounds.
+        let tools = conversation.jsonMode || !prefix.isEmpty || !toolsEnabled(for: conversation)
+            ? [] : availableTools(for: conversation)
+        request.tools = tools.map { $0.definition }
+        request.memoryKey = conversation.id
 
-        live = LiveReply(conversationID: conversation.id, messageID: reply.id, prefix: prefix)
+        var liveReply = LiveReply(conversationID: conversation.id, messageID: reply.id, prefix: prefix)
+        liveReply.toolsActive = !tools.isEmpty
+        live = liveReply
+        stopRequested = false
         lastParse = .distantPast
         lastPersist = .now
         let conversationID = conversation.id
         generationTask = Task { [weak self] in
-            await self?.run(model: model, request: request, conversationID: conversationID, reply: reply, prefix: prefix)
+            await self?.run(model: model, request: request, tools: tools, conversationID: conversationID,
+                            reply: reply, prefix: prefix)
         }
     }
 
-    private func run(model: InstalledModel, request: GenerationRequest, conversationID: UUID, reply: Message, prefix: String) async {
+    /// Generates a reply. When the model calls tools, runs them and generates again with their
+    /// results, until it answers without a call or the round limit is reached.
+    private func run(model: InstalledModel, request: GenerationRequest, tools: [any ChatTool],
+                     conversationID: UUID, reply: Message, prefix: String) async {
+        var request = request
+        var combined: GenerationStats?
         do {
-            let stream = try await engine.generate(with: model, request: request)
-            live?.isPreparing = false
-            for try await event in stream {
-                switch event {
-                case .started(let prompt):
-                    live?.opensInReasoning = prompt.opensInReasoning
-                case .promptProgress(let progress):
-                    live?.promptProgress = progress
-                case .text(let text):
-                    live?.raw += text
-                    live?.chunks += 1
-                    if live?.firstTokenAt == nil { live?.firstTokenAt = .now }
-                    if Date().timeIntervalSince(lastParse) > 0.066 { reparse() }
-                    if Date().timeIntervalSince(lastPersist) > 4 { persistPartial(reply, prefix: prefix, conversationID: conversationID) }
-                case .finished(let stats):
-                    reparse()
-                    finalize(reply, stats: stats, prefix: prefix, conversationID: conversationID)
+            for round in 0..<Self.maxToolRounds {
+                if round == Self.maxToolRounds - 1 { request.tools = [] }
+                let stream = try await engine.generate(with: model, request: request)
+                live?.isPreparing = false
+                var format: ToolCallFormat?
+                var finished: GenerationStats?
+                for try await event in stream {
+                    switch event {
+                    case .started(let prompt):
+                        live?.opensInReasoning = prompt.opensInReasoning
+                        format = prompt.toolCallFormat
+                    case .promptProgress(let progress):
+                        live?.promptProgress = progress
+                    case .text(let text):
+                        live?.raw += text
+                        live?.chunks += 1
+                        if live?.firstTokenAt == nil { live?.firstTokenAt = .now }
+                        if Date().timeIntervalSince(lastParse) > 0.066 { reparse() }
+                        if Date().timeIntervalSince(lastPersist) > 4 { persistPartial(reply, prefix: prefix, conversationID: conversationID) }
+                    case .finished(let stats):
+                        finished = stats
+                    }
                 }
+                guard let stats = finished else { break }
+                combined = combined.map { $0.merged(with: stats) } ?? stats
+                reparse()
+
+                guard !request.tools.isEmpty, stats.stopReason == .endOfSequence, !stopRequested,
+                      let current = live,
+                      let parsed = ToolCallParser.parse(Self.toolText(current, format: format), format: format,
+                                                        tools: request.tools) else {
+                    finalize(reply, stats: combined ?? stats, prefix: prefix, conversationID: conversationID)
+                    break
+                }
+
+                // Run the calls, then hand their results back for the next round.
+                if let reasoning = current.parsed.reasoning, !reasoning.isEmpty { live?.priorReasoning.append(reasoning) }
+                var results: [ChatTurn] = []
+                for call in parsed.calls {
+                    live?.runningTool = tools.first { $0.definition.name == call.name }?.activity ?? "Running \(call.name)"
+                    let step = await ToolRunner.run(call, round: round, preface: parsed.preface, tools: tools)
+                    live?.steps.append(step)
+                    results.append(ChatTurn(role: .tool, content: step.result, toolCallID: step.id, toolName: step.name))
+                }
+                live?.runningTool = nil
+                live?.raw = ""
+                live?.parsed = .empty
+                live?.opensInReasoning = false
+                persistPartial(reply, prefix: prefix, conversationID: conversationID)
+                if stopRequested {
+                    var stopped = combined ?? stats
+                    stopped.stopReason = .cancelled
+                    finalize(reply, stats: stopped, prefix: prefix, conversationID: conversationID)
+                    break
+                }
+                request.turns.append(ChatTurn(role: .assistant, content: parsed.preface, toolCalls: parsed.calls))
+                request.turns += results
             }
         } catch {
             reparse()
@@ -243,6 +315,15 @@ final class ChatService {
         generationTask = nil
     }
 
+    /// Where a model's tool calls appear. Harmony (gpt-oss) and Muse Glimmer write them as separate
+    /// messages, which the reasoning parser sets aside; the other formats write them in the answer.
+    private static func toolText(_ reply: LiveReply, format: ToolCallFormat?) -> String {
+        switch format {
+        case .harmony, .atem: reply.raw
+        default: reply.parsed.content
+        }
+    }
+
     private func reparse() {
         guard var current = live else { return }
         current.parsed = ReasoningParser.parse(current.raw, opensInReasoning: current.opensInReasoning)
@@ -250,26 +331,37 @@ final class ChatService {
         lastParse = .now
     }
 
+    /// The reply's text without tool-call markup, and all of its reasoning so far.
+    private func visibleParts(of current: LiveReply, streaming: Bool) -> (content: String, reasoning: String?) {
+        let parsed = streaming ? current.parsed : ReasoningParser.parse(current.raw, opensInReasoning: current.opensInReasoning)
+        let content = current.toolsActive ? ToolCallParser.visibleText(parsed.content, streaming: streaming) : parsed.content
+        let reasoning = (current.priorReasoning + [parsed.reasoning ?? ""]).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        return (content, reasoning.isEmpty ? nil : reasoning)
+    }
+
     private func persistPartial(_ reply: Message, prefix: String, conversationID: UUID) {
         guard let current = live else { return }
         lastPersist = .now
         // The conversation (and this reply with it) may have been deleted while generating.
         guard fetchConversation(conversationID) != nil else { return }
-        reply.content = prefix + current.parsed.content
-        if prefix.isEmpty { reply.reasoning = current.parsed.reasoning }
+        let parts = visibleParts(of: current, streaming: true)
+        reply.content = prefix + parts.content
+        if prefix.isEmpty { reply.reasoning = parts.reasoning }
+        if !current.steps.isEmpty { reply.toolSteps = current.steps }
         save()
     }
 
     private func finalize(_ reply: Message, stats: GenerationStats, prefix: String, conversationID: UUID) {
         // Touching a model deleted with its conversation during generation crashes SwiftData.
         guard fetchConversation(conversationID) != nil else { return }
-        let parsed = live.map { ReasoningParser.parse($0.raw, opensInReasoning: $0.opensInReasoning) } ?? .empty
-        reply.content = prefix + parsed.content
+        let parts = live.map { visibleParts(of: $0, streaming: false) } ?? (content: "", reasoning: nil)
+        reply.content = prefix + parts.content
         if prefix.isEmpty {
-            reply.reasoning = parsed.reasoning
-        } else if let more = parsed.reasoning {
+            reply.reasoning = parts.reasoning
+        } else if let more = parts.reasoning {
             reply.reasoning = [reply.reasoning, more].compactMap { $0 }.joined(separator: "\n\n")
         }
+        if let steps = live?.steps, !steps.isEmpty { reply.toolSteps = steps }
         var combined = stats
         if !prefix.isEmpty, let previous = reply.stats {
             combined.generatedTokens += previous.generatedTokens
@@ -293,9 +385,13 @@ final class ChatService {
     }
 
     private func fail(_ reply: Message, in conversation: Conversation, error: Error) {
-        if let partial = live, !partial.parsed.content.isEmpty {
-            reply.content = partial.prefix + partial.parsed.content
-            reply.reasoning = partial.parsed.reasoning ?? reply.reasoning
+        if let partial = live {
+            let parts = visibleParts(of: partial, streaming: false)
+            if !parts.content.isEmpty {
+                reply.content = partial.prefix + parts.content
+                reply.reasoning = parts.reasoning ?? reply.reasoning
+            }
+            if !partial.steps.isEmpty { reply.toolSteps = partial.steps }
         }
         if let inferenceError = error as? InferenceError, case .backgroundExecution = inferenceError {
             reply.state = .interrupted
@@ -306,6 +402,24 @@ final class ChatService {
         errors[conversation.id] = error.localizedDescription
         chatLog.error("Generation failed: \(error.localizedDescription, privacy: .public)")
         save()
+    }
+
+    // MARK: Tools
+
+    func toolsEnabled(for conversation: Conversation) -> Bool {
+        conversation.toolsEnabled ?? settings.toolsEnabledByDefault
+    }
+
+    /// The tools offered in this conversation. Document search appears when documents are attached.
+    private func availableTools(for conversation: Conversation) -> [any ChatTool] {
+        var tools: [any ChatTool] = [CalculatorTool(), DateTimeTool()]
+        if !conversation.documentIDs.isEmpty {
+            let ids = conversation.documentIDs
+            let descriptor = FetchDescriptor<KnowledgeDocument>(predicate: #Predicate { ids.contains($0.id) })
+            let chunks = ((try? context.fetch(descriptor)) ?? []).flatMap { Retrieval.chunk($0.text, title: $0.title) }
+            if !chunks.isEmpty { tools.append(DocumentSearchTool(chunks: chunks)) }
+        }
+        return tools
     }
 
     // MARK: Prompt construction
@@ -357,6 +471,16 @@ final class ChatService {
             case .user:
                 turns.append(ChatTurn(role: .user, content: expand(message, budget: documentBudget)))
             case .assistant:
+                // Tools used for this reply, in the order they ran, so the model knows what it found.
+                let steps = message.toolSteps
+                for round in Set(steps.map(\.round)).sorted() {
+                    let roundSteps = steps.filter { $0.round == round }
+                    turns.append(ChatTurn(role: .assistant, content: roundSteps.first?.preface ?? "",
+                                          toolCalls: roundSteps.map(\.call)))
+                    for step in roundSteps {
+                        turns.append(ChatTurn(role: .tool, content: step.result, toolCallID: step.id, toolName: step.name))
+                    }
+                }
                 guard !message.content.trimmed.isEmpty else { continue }
                 turns.append(ChatTurn(role: .assistant, content: message.content))
             case .system, .tool:

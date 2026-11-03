@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var showClearConversations = false
     @State private var showClearCache = false
     @State private var cacheMessage: String?
+    @State private var chatMemoryBytes: Int64 = 0
 
     private let device = AppServices.shared.device
 
@@ -74,11 +75,14 @@ struct SettingsView: View {
                 Toggle("GPU acceleration (Metal)", isOn: $settings.gpuAcceleration)
                 Toggle("Flash attention", isOn: $settings.flashAttention)
                 Toggle("Reuse prompt cache between turns", isOn: $settings.reusePromptCache)
+                Toggle("Remember long chats", isOn: $settings.rememberLongChats)
+                    .disabled(!settings.reusePromptCache)
+                Toggle("Tools in new conversations", isOn: $settings.toolsEnabledByDefault)
                 Button("Restore Inference Defaults") { settings.resetGenerationDefaults() }
             } header: {
                 Text("Inference")
             } footer: {
-                Text("Context and KV cache changes apply the next time a model loads. Automatic picks the longest context and highest cache precision that fit in memory; quantized caches require flash attention.")
+                Text("Context and KV cache changes apply the next time a model loads. Automatic picks the longest context and highest cache precision that fit in memory; quantized caches require flash attention. Remember long chats saves a long conversation's model memory, so reopening it continues instantly instead of re-reading it. Tools let models calculate exactly, check the date and search attached documents.")
             }
 
             // MARK: Memory & performance
@@ -125,6 +129,15 @@ struct SettingsView: View {
                     LabeledContent("Free on device", value: ByteFormat.file(storage.availableForImportantUsage))
                 }
                 LabeledContent("Conversations", value: conversationCount.formatted())
+                LabeledContent("Saved chat memory", value: ByteFormat.file(chatMemoryBytes))
+                Picker("Chat memory limit", selection: $settings.conversationMemoryLimitGB) {
+                    ForEach([1.0, 2.0, 4.0, 8.0, 16.0], id: \.self) { Text("\(Int($0)) GB").tag($0) }
+                }
+                Button("Clear Saved Chat Memory") {
+                    engine.conversationMemory.removeAll()
+                    chatMemoryBytes = 0
+                }
+                .disabled(chatMemoryBytes == 0)
                 Button("Clear Temporary Files") { showClearCache = true }
                 if let cacheMessage {
                     Text(cacheMessage).font(.footnote).foregroundStyle(.secondary)
@@ -162,6 +175,7 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(Theme.canvas)
         .navigationTitle("Settings")
+        .onAppear { chatMemoryBytes = engine.conversationMemory.totalBytes }
         .confirmationDialog("Delete all conversations?", isPresented: $showClearConversations, titleVisibility: .visible) {
             Button("Delete All Conversations", role: .destructive) {
                 // Through ChatService so a running reply stops first; each deletion cascades to its messages.
@@ -203,6 +217,7 @@ struct SettingsView: View {
         }
         URLCache.shared.removeAllCachedResponses()
         cacheMessage = "Freed \(ByteFormat.file(removed))."
+        chatMemoryBytes = engine.conversationMemory.totalBytes
     }
 }
 

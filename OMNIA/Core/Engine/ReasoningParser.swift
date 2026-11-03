@@ -103,6 +103,10 @@ enum ReasoningParser {
                 continue
             }
             let channel = afterChannel[..<messageMarker.lowerBound].trimmingCharacters(in: .whitespaces)
+            // Calls to functions (tools) are shown as tool steps, not as reasoning.
+            if segment[..<channelMarker.lowerBound].contains("to=functions") || channel.contains("to=functions") {
+                continue
+            }
             var body = afterChannel[messageMarker.upperBound...]
             var terminated = false
             for terminator in ["<|end|>", "<|return|>", "<|call|>"] {

@@ -1,6 +1,9 @@
 import Foundation
 import OrderedCollections
 
+/// A tool call's arguments, in the order the model wrote them.
+typealias ToolArguments = OrderedDictionary<String, JSONValue>
+
 /// A function the model may call, with a JSON Schema describing its arguments.
 struct ToolDefinition: Hashable, Sendable {
     let name: String
@@ -144,11 +147,28 @@ enum ToolCallParser {
 
     /// The reply text before any tool-call markup.
     static func preface(of text: String) -> String {
+        visibleText(text, streaming: false).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The reply as shown while tools are active: tool-call markup is hidden (the calls appear as
+    /// tool steps instead). While streaming, a marker that is still being written is hidden too.
+    static func visibleText(_ text: String, streaming: Bool) -> String {
         var cut = text.endIndex
         for marker in ToolCallFormat.startMarkers {
             if let range = text.range(of: marker), range.lowerBound < cut { cut = range.lowerBound }
         }
-        return String(text[..<cut]).trimmingCharacters(in: .whitespacesAndNewlines)
+        var visible = String(text[..<cut])
+        guard streaming else { return visible }
+        var partial = 0
+        for marker in ToolCallFormat.startMarkers {
+            for length in stride(from: marker.count - 1, through: 1, by: -1)
+            where length > partial && visible.hasSuffix(String(marker.prefix(length))) {
+                partial = length
+                break
+            }
+        }
+        visible.removeLast(partial)
+        return visible
     }
 
     static func parse(_ text: String, as format: ToolCallFormat, tools: [ToolDefinition]) -> [ToolCall]? {

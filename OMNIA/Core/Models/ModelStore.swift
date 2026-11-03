@@ -22,11 +22,13 @@ final class ModelStore {
     let importsInboxDirectory: URL
     private let registryURL: URL
 
-    init() {
+    /// - Parameter directory: Where models and the registry live (tests); defaults to
+    ///   Application Support/Models.
+    init(directory: URL? = nil) {
         let fileManager = FileManager.default
         let support = (try? fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
             ?? fileManager.temporaryDirectory
-        modelsDirectory = support.appending(path: "Models", directoryHint: .isDirectory)
+        modelsDirectory = directory ?? support.appending(path: "Models", directoryHint: .isDirectory)
         registryURL = modelsDirectory.appending(path: "registry.json")
         let documents = (try? fileManager.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
             ?? fileManager.temporaryDirectory

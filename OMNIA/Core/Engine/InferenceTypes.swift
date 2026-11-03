@@ -163,6 +163,18 @@ struct GenerationStats: Codable, Hashable, Sendable {
     var contextUtilization: Double {
         contextSize > 0 ? Double(contextUsed) / Double(contextSize) : 0
     }
+
+    /// Statistics for a reply written in several rounds (with tool calls in between): token
+    /// counts and generation time add up; time to first token comes from the first round;
+    /// speeds, prompt and context figures from the latest.
+    func merged(with next: GenerationStats) -> GenerationStats {
+        var result = next
+        result.generatedTokens += generatedTokens
+        result.totalDuration += totalDuration
+        result.timeToFirstToken = timeToFirstToken
+        result.restoredPromptTokens = restoredPromptTokens ?? next.restoredPromptTokens
+        return result
+    }
 }
 
 enum GenerationEvent: Sendable {

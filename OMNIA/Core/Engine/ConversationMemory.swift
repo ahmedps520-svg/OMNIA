@@ -36,6 +36,8 @@ final class ConversationMemoryStore {
 
     func request(conversationID: UUID, modelID: String, modelSize: UInt64,
                  configuration: RuntimeConfiguration, limitBytes: Int64) -> ConversationMemoryRequest {
+        // Clearing temporary files empties Caches, folder included.
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let name = "\(conversationID.uuidString)_\(Self.tag(modelID))_\(Self.tag(Self.fingerprint(modelSize, configuration))).\(Self.fileExtension)"
         return ConversationMemoryRequest(fileURL: directory.appendingPathComponent(name),
                                          minimumTokens: Self.minimumTokens,

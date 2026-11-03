@@ -1,5 +1,4 @@
 import Foundation
-import Jinja
 import Testing
 @testable import OMNIA
 
@@ -37,9 +36,11 @@ struct JSONValueTests {
     }
 
     @Test func rendersIntoTemplatesInOrder() throws {
-        let template = try Template("{{ value | tojson }}")
-        let value: JSONValue = .object(["b": .int(1), "a": .array([.string("x"), .bool(false)])])
-        #expect(try template.render(["value": value.jinjaValue]) == #"{"b": 1, "a": ["x", false]}"#)
+        let renderer = try ChatTemplateRenderer(source: "{{ tools[0].function.parameters | tojson }}", bosToken: "", eosToken: "")
+        let tool = ToolDefinition(name: "f", description: "d",
+                                  parameters: .object(["b": .int(1), "a": .array([.string("x"), .bool(false)])]))
+        let rendered = try renderer.render([], addGenerationPrompt: false, variables: [:], tools: [tool])
+        #expect(rendered == #"{"b": 1, "a": ["x", false]}"#)
     }
 }
 
@@ -165,6 +166,65 @@ struct ToolCallParserTests {
         let id = ToolCall.makeID()
         #expect(id.count == 9)
         #expect(id.allSatisfy { $0.isLetter || $0.isNumber })
+    }
+}
+
+@Suite("Tool runner")
+struct ToolRunnerTests {
+    struct EchoTool: ChatTool {
+        let symbol = "text.bubble"
+        let activity = "Echoing"
+        let definition = ToolDefinition(name: "echo", description: "Echoes.", parameters: ToolDefinition.schema([], required: []))
+        let output: String
+        func run(_ arguments: ToolArguments) async throws -> String { output }
+    }
+
+    private func run(_ name: String, _ arguments: ToolArguments, tools: [any ChatTool]) async -> ToolStep {
+        await ToolRunner.run(ToolCall(id: "call", name: name, arguments: arguments), round: 0, preface: "", tools: tools)
+    }
+
+    @Test func runsTheCalculator() async {
+        let step = await run("calculator", ["expression": .string("6*7")], tools: [CalculatorTool()])
+        #expect(step.result == "42")
+        #expect(!step.failed)
+        #expect(step.subject == "6*7")
+        #expect(step.title == "Calculated")
+    }
+
+    @Test func tellsTheTimeInARequestedZone() async {
+        var clock = DateTimeTool()
+        clock.now = { Date(timeIntervalSince1970: 0) }
+        let step = await run("current_datetime", ["timezone": .string("Etc/UTC")], tools: [clock])
+        #expect(step.result.contains("Thursday, 1 January 1970, 00:00"), "\(step.result)")
+        #expect(step.result.contains("UTC+00:00"), "\(step.result)")
+    }
+
+    @Test func reportsMissingArguments() async {
+        let step = await run("calculator", [:], tools: [CalculatorTool()])
+        #expect(step.failed)
+        #expect(step.result.contains("expression"))
+    }
+
+    @Test func searchesAttachedDocuments() async {
+        let chunks = Retrieval.chunk("Cats sleep a lot.\n\nThe M5 iPad Pro has 12 or 16 GB of memory.\n\nDogs bark.",
+                                     title: "Notes", targetCharacters: 40, overlap: 0)
+        let step = await run("search_documents", ["query": .string("iPad memory")], tools: [DocumentSearchTool(chunks: chunks)])
+        #expect(step.result.contains("16 GB"), "\(step.result)")
+        #expect(step.result.contains("[Notes, part"))
+    }
+
+    @Test func shortensLongResults() async {
+        let step = await run("echo", [:], tools: [EchoTool(output: String(repeating: "x", count: 10_000))])
+        #expect(step.result.count < ToolRunner.resultLimit + 100)
+        #expect(step.result.hasSuffix("[Result shortened to \(ToolRunner.resultLimit) characters.]"))
+    }
+
+    @Test func hidesToolMarkupWhileStreaming() {
+        #expect(ToolCallParser.visibleText("Let me check.\n<tool_call>{\"na", streaming: true) == "Let me check.\n")
+        #expect(ToolCallParser.visibleText("Answer: x <tool_c", streaming: true) == "Answer: x ")
+        #expect(ToolCallParser.visibleText("Done [TOOL_", streaming: true) == "Done ")
+        #expect(ToolCallParser.visibleText("a < b", streaming: true) == "a < b")
+        #expect(ToolCallParser.visibleText("ends with <", streaming: false) == "ends with <")
     }
 }
 

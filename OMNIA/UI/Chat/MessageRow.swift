@@ -113,17 +113,32 @@ struct AssistantMessageView: View {
 
     private var isStreaming: Bool { live != nil }
     private var content: String { live?.displayContent ?? message.content }
-    private var reasoning: String? { live.map { $0.parsed.reasoning ?? (($0.parsed.isReasoning) ? "" : nil) } ?? message.reasoning }
+    private var reasoning: String? {
+        guard let live else { return message.reasoning }
+        let earlier = live.priorReasoning.joined(separator: "\n\n")
+        let current = live.parsed.reasoning ?? (live.parsed.isReasoning ? "" : nil)
+        guard !earlier.isEmpty else { return current }
+        return [earlier, current].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+    /// Tool calls of this reply; a continued reply keeps the steps of its first part.
+    private var steps: [ToolStep] {
+        guard let live, !live.steps.isEmpty else { return message.toolSteps }
+        return live.steps
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let live, live.isPreparing || (live.raw.isEmpty && live.prefix.isEmpty) {
+            if let live, live.runningTool == nil, live.isPreparing || (live.raw.isEmpty && live.prefix.isEmpty) {
                 PreparingIndicator(live: live)
             }
 
             if settings.showReasoning, let reasoning {
                 ReasoningDisclosure(text: reasoning, isThinking: live?.parsed.isReasoning ?? false,
                                     duration: thinkingDuration)
+            }
+
+            if !steps.isEmpty || live?.runningTool != nil {
+                ToolStepsView(steps: steps, running: live?.runningTool)
             }
 
             if !content.isEmpty {
@@ -341,6 +356,9 @@ struct GenerationDetailsSheet: View {
                     LabeledValueRow(label: "Prompt", value: "\(stats.promptTokens)")
                     LabeledValueRow(label: "Reused from cache", value: "\(stats.reusedPromptTokens)")
                     LabeledValueRow(label: "Context used", value: "\(stats.contextUsed) of \(stats.contextSize) (\(ByteFormat.percent(stats.contextUtilization)))")
+                    if let restored = stats.restoredPromptTokens {
+                        LabeledValueRow(label: "Restored from saved memory", value: "\(restored)")
+                    }
                     if let trimmed = stats.trimmedTurns {
                         LabeledValueRow(label: "Earlier turns trimmed", value: "\(trimmed)")
                     }

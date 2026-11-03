@@ -185,6 +185,8 @@ final class AppSettings {
     var rememberLongChats: Bool { didSet { save(rememberLongChats, "rememberLongChats") } }
     /// Storage allowed for saved conversation memory, in gigabytes.
     var conversationMemoryLimitGB: Double { didSet { save(conversationMemoryLimitGB, "conversationMemoryLimitGB") } }
+    /// New conversations let the model use tools (calculator, date, documents…).
+    var toolsEnabledByDefault: Bool { didSet { save(toolsEnabledByDefault, "toolsEnabledByDefault") } }
 
     // Memory & performance
     var memorySafety: MemorySafety { didSet { save(memorySafety.rawValue, "memorySafety") } }
@@ -226,6 +228,7 @@ final class AppSettings {
         reusePromptCache = defaults.object(forKey: "reusePromptCache") as? Bool ?? true
         rememberLongChats = defaults.object(forKey: "rememberLongChats") as? Bool ?? true
         conversationMemoryLimitGB = defaults.object(forKey: "conversationMemoryLimitGB") as? Double ?? 4
+        toolsEnabledByDefault = defaults.object(forKey: "toolsEnabledByDefault") as? Bool ?? true
 
         memorySafety = MemorySafety(rawValue: defaults.string(forKey: "memorySafety") ?? "") ?? .balanced
         profilePreference = ProfilePreference(rawValue: defaults.string(forKey: "profilePreference") ?? "") ?? .automatic

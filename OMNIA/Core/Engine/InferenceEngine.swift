@@ -46,6 +46,14 @@ final class InferenceEngine {
 
     @ObservationIgnored private var activeBackend: (any InferenceBackend)?
     @ObservationIgnored private var activeMemoryURL: URL?
+
+    typealias BackendLoader = @Sendable (_ model: InstalledModel, _ file: URL, _ configuration: RuntimeConfiguration,
+                                         _ progress: @escaping @Sendable (Double) -> Void) async throws -> any InferenceBackend
+    /// Creates the backend for a model: llama.cpp. Tests substitute scripted backends.
+    @ObservationIgnored var loadBackend: BackendLoader = { model, file, configuration, progress in
+        try await LlamaRuntime.load(modelID: model.id, displayName: model.displayName, fileURL: file,
+                                    configuration: configuration, progress: progress)
+    }
     @ObservationIgnored private var idleTimer: Timer?
     @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     @ObservationIgnored private var backgroundUnloadWork: DispatchWorkItem?
@@ -159,11 +167,12 @@ final class InferenceEngine {
         engineLog.info("Loading \(model.id, privacy: .public) ctx=\(loadPlan.contextLength) kv=\(loadPlan.kvType.rawValue, privacy: .public) est=\(loadPlan.estimate.total)")
 
         let plannedLoad = loadPlan
+        let loader = loadBackend
         let task = Task<LoadedModel, Error> { [weak self] in
-            let runtime = try await LlamaRuntime.load(
-                modelID: model.id, displayName: model.displayName, fileURL: fileURL, configuration: configuration,
-                progress: { value in Task { @MainActor in self?.loadProgress = value } })
-            return LoadedModel(id: model.id, backend: runtime, plan: plannedLoad, lastUsed: .now)
+            let backend = try await loader(model, fileURL, configuration) { value in
+                Task { @MainActor in self?.loadProgress = value }
+            }
+            return LoadedModel(id: model.id, backend: backend, plan: plannedLoad, lastUsed: .now)
         }
         loadTask = task
         defer {

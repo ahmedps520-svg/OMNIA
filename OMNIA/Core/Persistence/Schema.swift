@@ -28,6 +28,10 @@ final class Conversation {
     var overridesData: Data?
     var documentIDs: [UUID] = []
     var thinkingEnabled: Bool?
+    /// nil follows Settings › Tools.
+    var toolsEnabled: Bool?
+    /// "json" for JSON mode; nil for normal text.
+    var responseFormatRaw: String?
     var folder: Folder?
     @Relationship(deleteRule: .cascade, inverse: \Message.conversation)
     var messages: [Message] = []
@@ -52,6 +56,12 @@ final class Conversation {
 
     var lastActivity: Date { updatedAt }
 
+    /// Replies must be a JSON object.
+    var jsonMode: Bool {
+        get { responseFormatRaw == "json" }
+        set { responseFormatRaw = newValue ? "json" : nil }
+    }
+
     var preview: String {
         orderedMessages.last(where: { $0.role == .assistant && !$0.content.isEmpty })?.content.titleSnippet(limit: 90)
             ?? orderedMessages.last?.content.titleSnippet(limit: 90) ?? ""
@@ -72,6 +82,8 @@ final class Message {
     var stateRaw: String
     var errorMessage: String?
     @Attribute(.externalStorage) var attachmentsData: Data?
+    /// Tools the model called while writing this reply (JSON-encoded `[ToolStep]`).
+    @Attribute(.externalStorage) var toolStepsData: Data?
     var conversation: Conversation?
 
     init(role: ChatRole, content: String, position: Int, modelID: String? = nil, modelName: String? = nil,
@@ -101,6 +113,11 @@ final class Message {
     var attachments: [AttachmentRecord] {
         get { attachmentsData.flatMap { try? JSONDecoder().decode([AttachmentRecord].self, from: $0) } ?? [] }
         set { attachmentsData = newValue.isEmpty ? nil : try? JSONEncoder().encode(newValue) }
+    }
+
+    var toolSteps: [ToolStep] {
+        get { toolStepsData.flatMap { try? JSONDecoder().decode([ToolStep].self, from: $0) } ?? [] }
+        set { toolStepsData = newValue.isEmpty ? nil : try? JSONEncoder().encode(newValue) }
     }
 }
 

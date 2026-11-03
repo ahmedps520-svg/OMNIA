@@ -60,6 +60,17 @@ struct ConversationSettingsSheet: View {
                 }
 
                 Section {
+                    Toggle("Tools", isOn: Binding(get: { chat.toolsEnabled(for: conversation) },
+                                                  set: { conversation.toolsEnabled = $0 }))
+                        .disabled(conversation.jsonMode)
+                    Toggle("JSON mode", isOn: $conversation.jsonMode)
+                } header: {
+                    Text("Capabilities")
+                } footer: {
+                    Text("Tools let the model calculate exactly, check the date and time, and search the documents attached below. JSON mode makes every reply a single JSON object; tools and reasoning are off while it's on.")
+                }
+
+                Section {
                     SamplingSlider(title: "Temperature", value: binding(\.temperature, fallback: effective.temperature), range: 0...2, step: 0.05)
                     SamplingSlider(title: "Top P", value: binding(\.topP, fallback: effective.topP), range: 0.05...1, step: 0.01)
                     SamplingSlider(title: "Min P", value: binding(\.minP, fallback: effective.minP), range: 0...0.5, step: 0.01)
