@@ -1,13 +1,19 @@
 import Foundation
 
-/// One downloadable GGUF file of a catalog model.
+/// One download of a catalog model: a GGUF file, or for MLX a folder of files.
 struct CatalogVariant: Identifiable, Hashable, Sendable {
     let quant: String
+    /// The GGUF file, or the MLX folder's name.
     let fileName: String
     let sizeBytes: Int64
+    /// The GGUF file's hash; empty for a folder, whose files carry their own.
     let sha256: String
+    /// An MLX folder's files, and the repository commit they were verified at.
+    var files: [ModelFile]? = nil
+    var revision: String? = nil
 
     var id: String { fileName }
+    var isMLX: Bool { files != nil }
 
     func bitsPerWeight(parameters: Double) -> Double {
         guard parameters > 0 else { return QuantizationInfo.bitsPerWeight(quant) ?? 4.8 }
@@ -60,16 +66,21 @@ struct CatalogModel: Identifiable, Hashable, Sendable {
         DownloadRequest(
             id: InstalledModel.makeID(repo: repo, fileName: variant.fileName),
             repo: repo,
-            path: variant.fileName,
+            path: variant.isMLX ? "" : variant.fileName,
             fileName: variant.fileName,
             displayName: "\(name) \(variant.quant)",
             developer: developer,
             expectedBytes: variant.sizeBytes,
-            sha256: variant.sha256,
+            sha256: variant.sha256.isEmpty ? nil : variant.sha256,
             license: license,
-            catalogID: id
+            catalogID: id,
+            files: variant.files,
+            revision: variant.revision
         )
     }
+
+    /// Runs on MLX rather than llama.cpp.
+    var isMLX: Bool { variants.contains { $0.isMLX } }
 
     /// Downloads this model's image encoder for an installed copy of it. Every installed copy
     /// of the same catalog model shares the one file.
@@ -140,11 +151,11 @@ struct Recommendation: Hashable, Sendable {
 }
 
 enum ModelCatalog {
-    static var all: [CatalogModel] { curated }
+    static var all: [CatalogModel] { curated + mlx }
 
     static func model(id: String?) -> CatalogModel? {
         guard let id else { return nil }
-        return curated.first { $0.id == id }
+        return all.first { $0.id == id }
     }
 
     static func architectureName(_ architecture: String) -> String {
@@ -152,7 +163,9 @@ enum ModelCatalog {
             "qwen35": "Qwen3.5 hybrid", "qwen35moe": "Qwen3.5 MoE", "qwen3": "Qwen3", "qwen3moe": "Qwen3 MoE",
             "gemma4": "Gemma 4", "gemma3": "Gemma 3", "gpt-oss": "gpt-oss MoE", "lfm2moe": "LFM2 MoE", "lfm2": "LFM2",
             "lfm3": "LFM3 hybrid", "muse-glimmer": "Muse Glimmer", "mistral3": "Mistral 3", "llama": "Llama",
-            "granite": "Granite", "granitehybrid": "Granite hybrid", "phi3": "Phi", "apple-foundation": "Apple Foundation Model"
+            "granite": "Granite", "granitehybrid": "Granite hybrid", "phi3": "Phi", "apple-foundation": "Apple Foundation Model",
+            // MLX names architectures by config.json's model_type.
+            "qwen3_5": "Qwen3.5 hybrid", "qwen3_5_moe": "Qwen3.5 MoE", "gemma4_unified": "Gemma 4", "gpt_oss": "gpt-oss MoE"
         ]
         return names[architecture] ?? architecture
     }

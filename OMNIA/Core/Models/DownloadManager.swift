@@ -21,6 +21,21 @@ struct DownloadRequest: Codable, Hashable, Sendable {
     var projectorFor: String? = nil
     /// The library's embedding model (see `SemanticIndex`), not a chat model.
     var embeddingModel: Bool? = nil
+    /// For a model that is a folder of files (MLX): they download one after another, each
+    /// verified, and the folder is installed once all are in. `fileName` names the folder,
+    /// `expectedBytes` is the total, and `path` and `sha256` aren't used.
+    var files: [ModelFile]? = nil
+    /// The repository commit to download from; nil means the latest.
+    var revision: String? = nil
+}
+
+/// One file of a model that is a folder.
+struct ModelFile: Codable, Hashable, Sendable {
+    /// Path in the repository, and in the installed folder.
+    var path: String
+    var bytes: Int64
+    /// SHA-256 the Hub publishes for large (Git LFS) files; small ones have none.
+    var sha256: String?
 }
 
 enum DownloadPhase: Equatable, Sendable {
@@ -45,6 +60,9 @@ struct DownloadItem: Identifiable, Sendable {
     var totalBytes: Int64
     var bytesPerSecond: Double = 0
     var startedAt: Date = .now
+    /// For a folder: the file downloading now, and the bytes of the files already verified.
+    var fileIndex = 0
+    var completedBytes: Int64 = 0
 
     var id: String { request.id }
     var fraction: Double { totalBytes > 0 ? min(1, Double(receivedBytes) / Double(totalBytes)) : 0 }
@@ -136,6 +154,27 @@ final class DownloadManager: NSObject {
         stagingDirectory.appending(path: ModelStore.storageName(repo: nil, fileName: id) + ".part")
     }
 
+    /// A folder's file, downloaded and waiting to be verified.
+    nonisolated static func stagingURL(for id: String, file index: Int) -> URL {
+        stagingDirectory.appending(path: ModelStore.storageName(repo: nil, fileName: id) + ".part\(index)")
+    }
+
+    /// Where a folder's verified files gather until it's installed.
+    nonisolated static func folderStagingURL(for id: String) -> URL {
+        stagingDirectory.appending(path: ModelStore.storageName(repo: nil, fileName: id) + ".folder", directoryHint: .isDirectory)
+    }
+
+    /// A task's description: the download's ID, then the file's index for a folder.
+    nonisolated static func taskDescription(id: String, file: Int?) -> String {
+        file.map { "\(id)\n\($0)" } ?? id
+    }
+
+    nonisolated static func parseTaskDescription(_ description: String) -> (id: String, file: Int?) {
+        let parts = description.split(separator: "\n", omittingEmptySubsequences: false)
+        guard parts.count == 2, let index = Int(parts[1]) else { return (description, nil) }
+        return (String(parts[0]), index)
+    }
+
     private static func resumeDataURL(for id: String) -> URL {
         stagingDirectory.appending(path: ModelStore.storageName(repo: nil, fileName: id) + ".resume")
     }
@@ -197,10 +236,15 @@ final class DownloadManager: NSObject {
             cancelling.insert(id)
             task.cancel()
         }
+        let fileIndex = items[id]?.fileIndex
         tasks[id] = nil
         items[id] = nil
         deleteResumeData(id)
         try? FileManager.default.removeItem(at: Self.stagingURL(for: id))
+        if let fileIndex {
+            try? FileManager.default.removeItem(at: Self.stagingURL(for: id, file: fileIndex))
+        }
+        try? FileManager.default.removeItem(at: Self.folderStagingURL(for: id))
         saveState()
     }
 
@@ -219,26 +263,33 @@ final class DownloadManager: NSObject {
     // MARK: Internals
 
     private func launch(_ request: DownloadRequest, resumeData: Data?) {
+        let previous = items[request.id]
+        // A folder carries on with the file it had reached; the files before it are verified.
+        let fileIndex = request.files == nil ? 0 : (previous?.fileIndex ?? 0)
+        let completed = request.files == nil ? 0 : (previous?.completedBytes ?? 0)
+        let file = request.files.flatMap { fileIndex < $0.count ? $0[fileIndex] : nil }
         let task: URLSessionDownloadTask
         if let resumeData {
             task = session.downloadTask(withResumeData: resumeData)
         } else {
-            var urlRequest = URLRequest(url: HuggingFaceClient.downloadURL(repo: request.repo, path: request.path))
+            var urlRequest = URLRequest(url: HuggingFaceClient.downloadURL(repo: request.repo, path: file?.path ?? request.path,
+                                                                           revision: request.revision ?? "main"))
             urlRequest.allowsCellularAccess = settings.allowCellularDownloads
             urlRequest.allowsExpensiveNetworkAccess = settings.allowCellularDownloads
             task = session.downloadTask(with: urlRequest)
         }
-        task.taskDescription = request.id
-        task.countOfBytesClientExpectsToReceive = request.expectedBytes
+        task.taskDescription = Self.taskDescription(id: request.id, file: request.files == nil ? nil : fileIndex)
+        task.countOfBytesClientExpectsToReceive = file?.bytes ?? request.expectedBytes
         task.priority = URLSessionTask.highPriority
         tasks[request.id] = task
-        let previous = items[request.id]
         items[request.id] = DownloadItem(
             request: request,
             phase: .downloading,
-            receivedBytes: resumeData == nil ? 0 : (previous?.receivedBytes ?? 0),
+            receivedBytes: resumeData == nil ? completed : (previous?.receivedBytes ?? completed),
             totalBytes: request.expectedBytes,
-            startedAt: previous?.startedAt ?? .now
+            startedAt: previous?.startedAt ?? .now,
+            fileIndex: fileIndex,
+            completedBytes: completed
         )
         speedReference[request.id] = nil
         task.resume()
@@ -249,8 +300,8 @@ final class DownloadManager: NSObject {
     private func reattachRunningTasks() {
         session.getAllTasks { [weak self] running in
             let pairs = running.compactMap { task -> (String, URLSessionDownloadTask)? in
-                guard let download = task as? URLSessionDownloadTask, let id = download.taskDescription else { return nil }
-                return (id, download)
+                guard let download = task as? URLSessionDownloadTask, let description = download.taskDescription else { return nil }
+                return (DownloadManager.parseTaskDescription(description).id, download)
             }
             Task { @MainActor in
                 guard let self else { return }
@@ -261,9 +312,10 @@ final class DownloadManager: NSObject {
                 // Anything recorded as downloading without a live task was interrupted, unless it had
                 // finished and OMNIA was terminated while verifying it: verify the staged file again.
                 for (id, item) in self.items where item.phase == .downloading && self.tasks[id] == nil {
-                    let staged = DownloadManager.stagingURL(for: id)
+                    let file = item.request.files == nil ? nil : item.fileIndex
+                    let staged = file.map { DownloadManager.stagingURL(for: id, file: $0) } ?? DownloadManager.stagingURL(for: id)
                     if FileManager.default.fileExists(atPath: staged.path(percentEncoded: false)) {
-                        self.handleDownloaded(id, stagedAt: staged)
+                        self.handleDownloaded(id, file: file, stagedAt: staged)
                     } else {
                         self.items[id]?.phase = self.loadResumeData(for: id) != nil ? .paused : .failed("The download was interrupted. Tap retry to start again.")
                     }
@@ -273,20 +325,27 @@ final class DownloadManager: NSObject {
         }
     }
 
-    fileprivate func updateProgress(_ id: String, received: Int64, expected: Int64) {
+    fileprivate func updateProgress(_ id: String, file: Int?, received: Int64, expected: Int64) {
         guard var item = items[id], item.phase == .downloading else { return }
-        item.receivedBytes = received
-        if expected > 0 { item.totalBytes = expected }
+        if item.request.files != nil {
+            // A folder's progress spans its files; a late report from a finished file is ignored.
+            guard file == item.fileIndex else { return }
+            item.receivedBytes = item.completedBytes + received
+        } else {
+            item.receivedBytes = received
+            if expected > 0 { item.totalBytes = expected }
+        }
+        let total = item.receivedBytes
         let now = Date()
         if let reference = speedReference[id] {
             let elapsed = now.timeIntervalSince(reference.date)
             if elapsed >= 1 {
-                let instant = Double(received - reference.bytes) / elapsed
+                let instant = Double(total - reference.bytes) / elapsed
                 item.bytesPerSecond = item.bytesPerSecond == 0 ? instant : item.bytesPerSecond * 0.7 + instant * 0.3
-                speedReference[id] = (now, received)
+                speedReference[id] = (now, total)
             }
         } else {
-            speedReference[id] = (now, received)
+            speedReference[id] = (now, total)
         }
         items[id] = item
     }
@@ -327,7 +386,11 @@ final class DownloadManager: NSObject {
         saveState()
     }
 
-    fileprivate func handleDownloaded(_ id: String, stagedAt staged: URL) {
+    fileprivate func handleDownloaded(_ id: String, file: Int?, stagedAt staged: URL) {
+        if let file {
+            handleFolderFile(id, file: file, stagedAt: staged)
+            return
+        }
         if case .verifying? = items[id]?.phase { return } // already being verified (relaunch recovery)
         tasks[id] = nil
         restartedOnce.remove(id)
@@ -421,6 +484,108 @@ final class DownloadManager: NSObject {
         }
     }
 
+    /// Verifies one of a folder's files, moves it into the folder, then downloads the next file
+    /// or, after the last, installs the folder.
+    private func handleFolderFile(_ id: String, file index: Int, stagedAt staged: URL) {
+        guard let item = items[id], let files = item.request.files, index == item.fileIndex, index < files.count else {
+            try? FileManager.default.removeItem(at: staged)
+            return
+        }
+        if case .verifying = item.phase { return } // already being verified (relaunch recovery)
+        tasks[id] = nil
+        restartedOnce.remove(id)
+        deleteResumeData(id)
+        items[id]?.phase = .verifying(0)
+        items[id]?.receivedBytes = item.completedBytes + files[index].bytes
+        items[id]?.bytesPerSecond = 0
+        saveState()
+        let request = item.request
+        let file = files[index]
+
+        Task.detached(priority: .utility) { [weak self] in
+            do {
+                try DownloadManager.verify(staged, bytes: file.bytes, sha256: file.sha256) { fraction in
+                    Task { @MainActor in self?.items[id]?.phase = .verifying(fraction) }
+                }
+                let destination = DownloadManager.folderStagingURL(for: id).appending(path: file.path)
+                let fileManager = FileManager.default
+                try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try? fileManager.removeItem(at: destination)
+                try fileManager.moveItem(at: staged, to: destination)
+                await MainActor.run {
+                    guard let self, self.items[id] != nil else { return }
+                    self.items[id]?.completedBytes += file.bytes
+                    self.items[id]?.fileIndex = index + 1
+                    if index + 1 < files.count {
+                        self.launch(request, resumeData: nil)
+                    } else {
+                        self.installFolder(request)
+                    }
+                }
+            } catch {
+                try? FileManager.default.removeItem(at: staged)
+                await MainActor.run {
+                    self?.items[id]?.phase = .failed(error.localizedDescription)
+                    self?.saveState()
+                }
+            }
+        }
+    }
+
+    /// Checks a downloaded file's size and, when the publisher gives one, its SHA-256.
+    nonisolated private static func verify(_ url: URL, bytes: Int64, sha256: String?,
+                                           progress: @escaping @Sendable (Double) -> Void) throws {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))
+        let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        if bytes > 0, size != bytes { throw DownloadError.sizeMismatch(expected: bytes, actual: size) }
+        guard let expected = sha256?.lowercased(), !expected.isEmpty else { return }
+        guard try ModelStore.sha256(of: url, progress: progress) == expected else { throw DownloadError.checksumMismatch }
+    }
+
+    /// Installs a folder whose files are all verified: checks it's a model MLX can run, moves it
+    /// into the Models directory and registers it.
+    private func installFolder(_ request: DownloadRequest) {
+        let id = request.id
+        let folder = Self.folderStagingURL(for: id)
+        // A file missing from the folder (storage cleaned up meanwhile) is fetched again.
+        if let files = request.files,
+           let missing = files.firstIndex(where: { !FileManager.default.fileExists(atPath: folder.appending(path: $0.path).path(percentEncoded: false)) }) {
+            items[id]?.fileIndex = missing
+            items[id]?.completedBytes = files[..<missing].reduce(0) { $0 + $1.bytes }
+            launch(request, resumeData: nil)
+            return
+        }
+        Task.detached(priority: .utility) { [weak self] in
+            do {
+                let info = try MLXModelInspector.inspect(folderAt: folder)
+                try await MainActor.run {
+                    guard let self else { return }
+                    let model = try self.store.installFolder(
+                        at: folder, id: id, displayName: request.displayName, developer: request.developer,
+                        repo: request.repo, folderName: request.fileName, info: info,
+                        verification: request.files?.contains { $0.sha256 != nil } == true ? .verified : .structureValid,
+                        license: request.license, origin: request.catalogID != nil ? .catalog : .huggingFace,
+                        catalogID: request.catalogID)
+                    self.items[id]?.phase = .completed
+                    self.saveState()
+                    self.onInstalled?(model)
+                }
+                try? await Task.sleep(for: .seconds(4))
+                await MainActor.run {
+                    if self?.items[id]?.phase == .completed { self?.items[id] = nil }
+                }
+            } catch {
+                try? FileManager.default.removeItem(at: folder)
+                await MainActor.run {
+                    self?.items[id]?.fileIndex = 0
+                    self?.items[id]?.completedBytes = 0
+                    self?.items[id]?.phase = .failed(error.localizedDescription)
+                    self?.saveState()
+                }
+            }
+        }
+    }
+
     fileprivate func finishBackgroundEvents() {
         backgroundCompletionHandler?()
         backgroundCompletionHandler = nil
@@ -434,19 +599,25 @@ final class DownloadManager: NSObject {
         var totalBytes: Int64
         var state: String
         var message: String?
+        /// Folders only; absent in state saved before folders.
+        var fileIndex: Int?
+        var completedBytes: Int64?
     }
 
     private func saveState() {
         let persisted = items.values.compactMap { item -> PersistedItem? in
+            let state: String
+            var message: String?
             switch item.phase {
             case .completed: return nil
-            case .failed(let message):
-                return PersistedItem(request: item.request, receivedBytes: item.receivedBytes, totalBytes: item.totalBytes, state: "failed", message: message)
-            case .paused:
-                return PersistedItem(request: item.request, receivedBytes: item.receivedBytes, totalBytes: item.totalBytes, state: "paused")
-            case .downloading, .verifying:
-                return PersistedItem(request: item.request, receivedBytes: item.receivedBytes, totalBytes: item.totalBytes, state: "downloading")
+            case .failed(let reason):
+                state = "failed"
+                message = reason
+            case .paused: state = "paused"
+            case .downloading, .verifying: state = "downloading"
             }
+            return PersistedItem(request: item.request, receivedBytes: item.receivedBytes, totalBytes: item.totalBytes,
+                                 state: state, message: message, fileIndex: item.fileIndex, completedBytes: item.completedBytes)
         }
         if let data = try? JSONEncoder().encode(persisted) {
             try? data.write(to: Self.stateURL, options: .atomic)
@@ -474,7 +645,8 @@ final class DownloadManager: NSObject {
             default: phase = .downloading
             }
             items[entry.request.id] = DownloadItem(request: entry.request, phase: phase,
-                                                   receivedBytes: entry.receivedBytes, totalBytes: entry.totalBytes)
+                                                   receivedBytes: entry.receivedBytes, totalBytes: entry.totalBytes,
+                                                   fileIndex: entry.fileIndex ?? 0, completedBytes: entry.completedBytes ?? 0)
         }
     }
 
@@ -495,7 +667,8 @@ final class DownloadManager: NSObject {
 
 extension DownloadManager: URLSessionDownloadDelegate {
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        guard let id = downloadTask.taskDescription else { return }
+        guard let description = downloadTask.taskDescription else { return }
+        let (id, file) = Self.parseTaskDescription(description)
         let status = (downloadTask.response as? HTTPURLResponse)?.statusCode ?? 200
         guard (200..<300).contains(status) else {
             try? FileManager.default.removeItem(at: location)
@@ -503,11 +676,11 @@ extension DownloadManager: URLSessionDownloadDelegate {
             return
         }
         // The temporary file is deleted when this method returns: move it synchronously.
-        let staged = Self.stagingURL(for: id)
+        let staged = file.map { Self.stagingURL(for: id, file: $0) } ?? Self.stagingURL(for: id)
         do {
             try? FileManager.default.removeItem(at: staged)
             try FileManager.default.moveItem(at: location, to: staged)
-            Task { @MainActor in self.handleDownloaded(id, stagedAt: staged) }
+            Task { @MainActor in self.handleDownloaded(id, file: file, stagedAt: staged) }
         } catch {
             let message = "Couldn't keep the downloaded file: \(error.localizedDescription)"
             Task { @MainActor in self.handleFailure(id, resumeData: nil, wasCancelled: false, message: message) }
@@ -516,7 +689,8 @@ extension DownloadManager: URLSessionDownloadDelegate {
 
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
                                 totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        guard let id = downloadTask.taskDescription else { return }
+        guard let description = downloadTask.taskDescription else { return }
+        let (id, file) = Self.parseTaskDescription(description)
         let now = Date().timeIntervalSinceReferenceDate
         let shouldReport = progressThrottle.withLock { last -> Bool in
             if let previous = last[id], now - previous < 0.25 { return false }
@@ -524,11 +698,12 @@ extension DownloadManager: URLSessionDownloadDelegate {
             return true
         }
         guard shouldReport else { return }
-        Task { @MainActor in self.updateProgress(id, received: totalBytesWritten, expected: totalBytesExpectedToWrite) }
+        Task { @MainActor in self.updateProgress(id, file: file, received: totalBytesWritten, expected: totalBytesExpectedToWrite) }
     }
 
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let id = task.taskDescription, let error else { return }
+        guard let description = task.taskDescription, let error else { return }
+        let id = Self.parseTaskDescription(description).id
         let nsError = error as NSError
         let resumeData = nsError.userInfo[NSURLSessionDownloadTaskResumeData] as? Data
         let cancelled = nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled

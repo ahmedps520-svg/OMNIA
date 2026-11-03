@@ -15,11 +15,14 @@ struct DiscoverModelsSection: View {
     var body: some View {
         let budget = engine.currentBudget()
         let profile = engine.profile
-        let assessed = ModelCatalog.all.map { model in
+        let assessed = ModelCatalog.curated.map { model in
             (model: model, best: ModelCatalog.bestVariant(of: model, device: device, profile: profile, budget: budget))
         }
         let fitting = assessed.filter { $0.best != nil }.sorted { $0.model.qualityScore > $1.model.qualityScore }
         let tooLarge = assessed.filter { $0.best == nil }
+        let mlx = ModelCatalog.mlx.map { model in
+            (model: model, best: ModelCatalog.bestVariant(of: model, device: device, profile: profile, budget: budget))
+        }
 
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 12) {
@@ -53,13 +56,27 @@ struct DiscoverModelsSection: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader("Catalog", subtitle: "\(fitting.count) of \(ModelCatalog.all.count) verified models fit this device. Files come from public Hugging Face repositories and are checked against their published SHA-256.")
+                SectionHeader("Catalog", subtitle: "\(fitting.count) of \(ModelCatalog.curated.count) verified models fit this device. Files come from public Hugging Face repositories and are checked against their published SHA-256.")
                 LazyVStack(spacing: 10) {
                     ForEach(fitting, id: \.model.id) { entry in
                         NavigationLink(value: entry.model) {
                             CatalogModelRow(model: entry.model, best: entry.best)
                         }
                         .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            if !mlx.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionHeader("MLX (Beta)", subtitle: "Models for Apple's MLX engine: folders of safetensors from mlx-community. On M5 chips MLX reads prompts with the GPU's Neural Accelerators. Large files are checked against their published SHA-256.")
+                    LazyVStack(spacing: 10) {
+                        ForEach(mlx, id: \.model.id) { entry in
+                            NavigationLink(value: entry.model) {
+                                CatalogModelRow(model: entry.model, best: entry.best)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             }

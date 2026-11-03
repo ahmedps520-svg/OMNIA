@@ -119,8 +119,9 @@ struct HuggingFaceClient: Sendable {
         return try await get(components.url!, as: [TreeEntry].self)
     }
 
-    static func downloadURL(repo: String, path: String) -> URL {
-        var components = URLComponents(url: base.appending(path: "\(repo)/resolve/main/\(path)"), resolvingAgainstBaseURL: false)!
+    /// `revision` pins a commit, so the files match the hashes recorded for it.
+    static func downloadURL(repo: String, path: String, revision: String = "main") -> URL {
+        var components = URLComponents(url: base.appending(path: "\(repo)/resolve/\(revision)/\(path)"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "download", value: "true")]
         return components.url!
     }

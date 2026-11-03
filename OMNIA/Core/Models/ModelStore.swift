@@ -163,6 +163,33 @@ final class ModelStore {
         return model
     }
 
+    /// Moves a verified MLX model folder into the Models directory and registers it.
+    @discardableResult
+    func installFolder(at source: URL, id: String, displayName: String, developer: String?, repo: String?,
+                       folderName: String, info: MLXModelInfo, verification: VerificationState,
+                       license: String?, origin: ModelSource, catalogID: String?) throws -> InstalledModel {
+        let fileManager = FileManager.default
+        let relative = ModelStore.storageName(repo: repo, fileName: folderName)
+        let destination = modelsDirectory.appending(path: relative, directoryHint: .isDirectory)
+        if fileManager.fileExists(atPath: destination.path(percentEncoded: false)) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.moveItem(at: source, to: destination)
+        ModelStore.excludeFromBackup(destination)
+
+        let model = InstalledModel(
+            id: id, displayName: displayName, developer: developer, repo: repo, fileName: folderName,
+            relativePath: relative, sizeBytes: UInt64(max(SystemMetrics.directorySize(destination), 0)), sha256: nil,
+            verification: verification, quantization: info.quantizationLabel, facts: info.facts, license: license,
+            source: origin, catalogID: catalogID, addedAt: .now, format: .mlx)
+        models.removeAll { $0.id == id }
+        models.append(model)
+        save()
+        refreshStorage()
+        storeLog.info("Installed MLX \(id, privacy: .public) (\(model.sizeBytes) bytes)")
+        return model
+    }
+
     func delete(_ model: InstalledModel) async {
         guard !model.isSystem else { return }
         await willDeleteModel?(model)

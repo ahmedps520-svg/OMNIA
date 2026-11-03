@@ -8,6 +8,14 @@ enum VerificationState: String, Codable, Sendable {
     case failed
 }
 
+/// How a model's weights are stored, which decides the engine that runs it.
+enum ModelFormat: String, Codable, Sendable {
+    /// One GGUF file, run by llama.cpp.
+    case gguf
+    /// A folder of safetensors with its config and tokenizer, run by MLX.
+    case mlx
+}
+
 enum ModelSource: String, Codable, Sendable {
     /// `system` is a model built into iOS (Apple's on-device model), not a file.
     case catalog, huggingFace, imported, system
@@ -67,8 +75,13 @@ struct InstalledModel: Codable, Identifiable, Hashable, Sendable {
     var benchmarkContext: Int?
     /// The image encoder, when image support is installed.
     var projector: InstalledProjector?
+    /// Nil for models recorded before there were formats: those are GGUF.
+    var format: ModelFormat?
 
     var parameterLabel: String { ParameterFormat.label(billions: facts.parameters) }
+
+    /// An MLX folder (`relativePath` is a directory), not a GGUF file.
+    var isMLX: Bool { format == .mlx }
 
     var supportsImages: Bool { projector != nil }
 
