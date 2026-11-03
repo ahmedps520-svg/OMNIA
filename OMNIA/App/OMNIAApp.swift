@@ -20,6 +20,7 @@ struct OMNIAApp: App {
                 .environment(services.engine)
                 .environment(services.chat)
                 .environment(services.compare)
+                .environment(services.semanticIndex)
                 .modelContainer(services.container)
                 .onOpenURL { url in
                     guard url.isFileURL else { return }

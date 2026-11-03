@@ -6,14 +6,18 @@ import SwiftUI
 /// passage-by-passage when a conversation references them.
 struct DocumentLibrary: View {
     @Environment(\.modelContext) private var context
+    @Environment(SemanticIndex.self) private var semanticIndex
+    @Environment(DownloadManager.self) private var downloads
     @Query(sort: \KnowledgeDocument.createdAt, order: .reverse) private var documents: [KnowledgeDocument]
     @State private var showImporter = false
     @State private var errorMessage: String?
     @State private var isImporting = false
     @State private var preview: KnowledgeDocument?
+    @State private var showRemoveEmbedder = false
 
     var body: some View {
         List {
+            meaningSection
             Section {
                 if documents.isEmpty {
                     Text("Add PDFs, Markdown, text or code. Then attach them to a conversation in its settings: OMNIA retrieves the relevant passages on device for every question.")
@@ -77,7 +81,15 @@ struct DocumentLibrary: View {
                 }
                 try? context.save()
                 isImporting = false
+                semanticIndex.scheduleIndexing()
             }
+        }
+        .confirmationDialog("Stop searching by meaning?", isPresented: $showRemoveEmbedder, titleVisibility: .visible) {
+            Button("Remove Embedding Model", role: .destructive) {
+                Task { await semanticIndex.remove() }
+            }
+        } message: {
+            Text("The model and the document index it built are deleted. Search goes back to matching words.")
         }
         .sheet(item: $preview) { document in
             NavigationStack {
@@ -92,6 +104,75 @@ struct DocumentLibrary: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { preview = nil } } }
             }
+        }
+    }
+}
+
+extension DocumentLibrary {
+    /// The optional embedding model: download, indexing progress, removal.
+    @ViewBuilder
+    var meaningSection: some View {
+        let entry = EmbeddingCatalog.recommended
+        let request = entry.downloadRequest
+        Section {
+            if let embedder = semanticIndex.embedder {
+                let indexed = documents.filter { $0.embeddingModelID == embedder.id }.count
+                Label {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Searching by meaning with \(embedder.name)").font(.subheadline.weight(.semibold))
+                        Text("\(indexed) of \(documents.count) documents indexed · \(ByteFormat.file(embedder.sizeBytes))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "sparkle.magnifyingglass").foregroundStyle(.tint)
+                }
+                if let progress = semanticIndex.progress {
+                    ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1))) {
+                        Text("Indexing \(progress.done + 1) of \(progress.total)…").font(.caption)
+                    }
+                }
+                if let error = semanticIndex.lastError {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(Theme.caution)
+                }
+                Button("Remove Embedding Model", systemImage: "trash", role: .destructive) { showRemoveEmbedder = true }
+            } else if let item = downloads.item(for: request.id) {
+                switch item.phase {
+                case .downloading, .verifying:
+                    ProgressView(value: item.fraction) {
+                        Text("Downloading \(entry.name) · \(Int(item.fraction * 100))%").font(.caption)
+                    }
+                    Button("Cancel", role: .cancel) { downloads.cancel(request.id) }
+                case .paused:
+                    Button("Resume Download", systemImage: "play.fill") { downloads.resume(request.id) }
+                case .failed(let message):
+                    Label(message, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(Theme.critical)
+                    Button("Try Again", systemImage: "arrow.clockwise") { startDownload(request) }
+                case .completed:
+                    Label("\(entry.name) is installed.", systemImage: "checkmark.circle")
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Search by meaning").font(.subheadline.weight(.semibold))
+                    Text("Find passages that answer a question in other words or another language, not only ones with matching words. Downloads \(entry.name) (\(ByteFormat.file(entry.sizeBytes)), \(entry.license)) once; documents are indexed on this device.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Button("Download \(entry.name)", systemImage: "arrow.down.circle") { startDownload(request) }
+            }
+        }
+    }
+
+    private func startDownload(_ request: DownloadRequest) {
+        do {
+            errorMessage = nil
+            try downloads.start(request)
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }

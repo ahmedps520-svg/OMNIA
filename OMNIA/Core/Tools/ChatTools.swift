@@ -145,19 +145,33 @@ struct DateTimeTool: ChatTool {
 }
 
 /// Searches the documents attached to the conversation. The chunks are prepared before the reply
-/// starts, so the tool needs no database access while running.
+/// starts, so the tool needs no database access while running. With meaning vectors and an
+/// `embed` function it also finds passages that answer the query in other words.
 struct DocumentSearchTool: ChatTool {
     let symbol = "doc.text.magnifyingglass"
     let activity = "Searching your documents"
-    let chunks: [DocumentChunk]
+    let indexed: IndexedChunks
+    let embed: (@Sendable (String) async -> [Float]?)?
     let definition = ToolDefinition(
         name: "search_documents",
         description: "Searches the documents the user attached to this conversation and returns the most relevant passages.",
         parameters: ToolDefinition.schema([("query", "string", "What to look for")], required: ["query"]))
 
+    init(indexed: IndexedChunks, embed: (@Sendable (String) async -> [Float]?)? = nil) {
+        self.indexed = indexed
+        self.embed = embed
+    }
+
+    /// Keyword search only.
+    init(chunks: [DocumentChunk]) {
+        self.init(indexed: IndexedChunks(chunks: chunks))
+    }
+
     func run(_ arguments: ToolArguments) async throws -> String {
         let query = try ToolRunner.string("query", in: arguments)
-        let found = Retrieval.search(query, in: chunks, limit: 5, characterBudget: 5_000)
+        let vector = await embed?(query)
+        let found = Retrieval.search(query, in: indexed.chunks, similarities: vector.map(indexed.similarities),
+                                     limit: 5, characterBudget: 5_000)
         guard !found.isEmpty else { return "No matching passages." }
         return found.map { "[\($0.documentTitle), part \($0.index + 1)]\n\($0.text)" }.joined(separator: "\n\n")
     }

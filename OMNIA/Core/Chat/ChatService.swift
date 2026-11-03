@@ -54,12 +54,16 @@ final class ChatService {
     private let store: ModelStore
     private let settings: AppSettings
     private let container: ModelContainer
+    /// Finds document passages by meaning, when the library has an embedding model.
+    private let semanticIndex: SemanticIndex?
 
-    init(engine: InferenceEngine, store: ModelStore, settings: AppSettings, container: ModelContainer) {
+    init(engine: InferenceEngine, store: ModelStore, settings: AppSettings, container: ModelContainer,
+         semanticIndex: SemanticIndex? = nil) {
         self.engine = engine
         self.store = store
         self.settings = settings
         self.container = container
+        self.semanticIndex = semanticIndex
     }
 
     private var context: ModelContext { container.mainContext }
@@ -209,6 +213,34 @@ final class ChatService {
             conversation.modelName = model.displayName
         }
 
+        live = LiveReply(conversationID: conversation.id, messageID: reply.id, prefix: prefix)
+        stopRequested = false
+        lastParse = .distantPast
+        lastPersist = .now
+        let conversationID = conversation.id
+        // With documents attached and an embedding model installed, the question is also matched
+        // by meaning: its vector is computed first (shown as "Preparing").
+        let question = conversation.orderedMessages.last { $0.role == .user && $0.id != reply.id }?.content ?? ""
+        let index = conversation.documentIDs.isEmpty ? nil : semanticIndex.flatMap { $0.isReady ? $0 : nil }
+        generationTask = Task { [weak self] in
+            let queryVector = await index?.queryVector(question)
+            guard let self else { return }
+            guard let conversation = self.fetchConversation(conversationID) else {
+                self.live = nil
+                self.generationTask = nil
+                return
+            }
+            let prepared = self.makeRequest(for: conversation, reply: reply, model: model, prefix: prefix,
+                                            queryVector: queryVector)
+            self.live?.toolsActive = !prepared.tools.isEmpty
+            await self.run(model: model, request: prepared.request, tools: prepared.tools, conversationID: conversationID,
+                           reply: reply, prefix: prefix)
+        }
+    }
+
+    /// The request for `reply`: sampling settings, prompt turns, reasoning, response format and tools.
+    private func makeRequest(for conversation: Conversation, reply: Message, model: InstalledModel, prefix: String,
+                             queryVector: [Float]?) -> (request: GenerationRequest, tools: [any ChatTool]) {
         let persona = persona(for: conversation)
         var generation = settings.generation.applying(model.settings.generation)
         if let temperature = persona?.temperature { generation.temperature = temperature }
@@ -216,7 +248,8 @@ final class ChatService {
 
         let contextTokens = engine.loaded[model.id]?.info.configuration.contextLength
             ?? engine.plan(for: model).contextLength
-        let turns = buildTurns(for: conversation, excluding: reply, model: model, persona: persona, contextTokens: contextTokens)
+        let turns = buildTurns(for: conversation, excluding: reply, model: model, persona: persona,
+                               contextTokens: contextTokens, queryVector: queryVector)
         var request = GenerationRequest(turns: turns, assistantPrefix: prefix.isEmpty ? nil : prefix,
                                         sampling: SamplingParameters(generation), maxTokens: generation.maxOutputTokens)
         // JSON mode needs the reply to be the object itself, so reasoning is switched off.
@@ -230,18 +263,7 @@ final class ChatService {
             ? [] : availableTools(for: conversation)
         request.tools = tools.map { $0.definition }
         request.memoryKey = conversation.id
-
-        var liveReply = LiveReply(conversationID: conversation.id, messageID: reply.id, prefix: prefix)
-        liveReply.toolsActive = !tools.isEmpty
-        live = liveReply
-        stopRequested = false
-        lastParse = .distantPast
-        lastPersist = .now
-        let conversationID = conversation.id
-        generationTask = Task { [weak self] in
-            await self?.run(model: model, request: request, tools: tools, conversationID: conversationID,
-                            reply: reply, prefix: prefix)
-        }
+        return (request, tools)
     }
 
     /// Generates a reply. When the model calls tools, runs them and generates again with their
@@ -420,8 +442,13 @@ final class ChatService {
         if !conversation.documentIDs.isEmpty {
             let ids = conversation.documentIDs
             let descriptor = FetchDescriptor<KnowledgeDocument>(predicate: #Predicate { ids.contains($0.id) })
-            let chunks = ((try? context.fetch(descriptor)) ?? []).flatMap { Retrieval.chunk($0.text, title: $0.title) }
-            if !chunks.isEmpty { tools.append(DocumentSearchTool(chunks: chunks)) }
+            let indexed = indexedChunks(of: (try? context.fetch(descriptor)) ?? [])
+            if !indexed.chunks.isEmpty {
+                let index = semanticIndex
+                let embed: (@Sendable (String) async -> [Float]?)? = indexed.hasVectors && index != nil
+                    ? { query in await index?.queryVector(query) } : nil
+                tools.append(DocumentSearchTool(indexed: indexed, embed: embed))
+            }
         }
         return tools
     }
@@ -452,7 +479,7 @@ final class ChatService {
     }
 
     private func buildTurns(for conversation: Conversation, excluding reply: Message, model: InstalledModel,
-                            persona: Persona?, contextTokens: Int) -> [ChatTurn] {
+                            persona: Persona?, contextTokens: Int, queryVector: [Float]? = nil) -> [ChatTurn] {
         let history = conversation.orderedMessages.filter { $0.id != reply.id }
         let lastUserText = history.last(where: { $0.role == .user })?.content ?? ""
         // Roughly 3.5 characters per token; documents may use up to ~45% of the window.
@@ -460,7 +487,8 @@ final class ChatService {
 
         var system = systemPrompt(for: conversation, model: model, persona: persona)
         if !conversation.documentIDs.isEmpty {
-            let excerpts = knowledgeExcerpts(ids: conversation.documentIDs, query: lastUserText, budget: documentBudget / 2)
+            let excerpts = knowledgeExcerpts(ids: conversation.documentIDs, query: lastUserText, queryVector: queryVector,
+                                             budget: documentBudget / 2)
             if !excerpts.isEmpty {
                 system += (system.isEmpty ? "" : "\n\n")
                     + "Use these excerpts from the user's documents when they are relevant, and name the document you rely on.\n\n"
@@ -554,12 +582,18 @@ final class ChatService {
         return text
     }
 
-    private func knowledgeExcerpts(ids: [UUID], query: String, budget: Int) -> String {
+    private func knowledgeExcerpts(ids: [UUID], query: String, queryVector: [Float]?, budget: Int) -> String {
         let descriptor = FetchDescriptor<KnowledgeDocument>(predicate: #Predicate { ids.contains($0.id) })
         guard let documents = try? context.fetch(descriptor), !documents.isEmpty else { return "" }
-        let chunks = documents.flatMap { Retrieval.chunk($0.text, title: $0.title) }
-        let selected = Retrieval.search(query, in: chunks, limit: 8, characterBudget: budget)
+        let indexed = indexedChunks(of: documents)
+        let selected = Retrieval.search(query, in: indexed.chunks, similarities: queryVector.map(indexed.similarities),
+                                        limit: 8, characterBudget: budget)
         return selected.map { "[\($0.documentTitle), part \($0.index + 1)]\n\($0.text)" }.joined(separator: "\n\n")
+    }
+
+    /// The documents' passages, with meaning vectors when the library has an embedding model.
+    private func indexedChunks(of documents: [KnowledgeDocument]) -> IndexedChunks {
+        semanticIndex?.chunks(of: documents) ?? IndexedChunks(documents: documents)
     }
 
     // MARK: Helpers

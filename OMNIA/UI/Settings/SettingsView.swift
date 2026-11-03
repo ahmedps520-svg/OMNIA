@@ -5,6 +5,7 @@ struct SettingsView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(ModelStore.self) private var store
     @Environment(InferenceEngine.self) private var engine
+    @Environment(SemanticIndex.self) private var semanticIndex
     @Environment(ChatService.self) private var chat
     @Environment(ModelImporter.self) private var importer
     @Environment(\.modelContext) private var context
@@ -126,6 +127,9 @@ struct SettingsView: View {
                                 }
                             }
                         }
+                }
+                if let embedder = semanticIndex.embedder {
+                    LabeledContent("\(embedder.name) (library search)", value: ByteFormat.file(embedder.sizeBytes))
                 }
                 if let storage = SystemMetrics.storage() {
                     LabeledContent("Free on device", value: ByteFormat.file(storage.availableForImportantUsage))

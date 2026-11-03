@@ -1,7 +1,8 @@
 import Foundation
 import NaturalLanguage
 
-/// Lexical retrieval (BM25) over document chunks, fully on device.
+/// Retrieval over document chunks, fully on device: keyword ranking (BM25), fused with ranking
+/// by meaning when the library's embedding model has indexed the documents (`SemanticIndex`).
 ///
 /// Used when attached or library documents are too long to fit in the context window:
 /// only the passages most relevant to the user's message are placed in the prompt.
@@ -58,11 +59,47 @@ enum Retrieval {
     }
 
     /// Returns the `limit` best chunks for `query`, in document order, within `characterBudget`.
-    static func search(_ query: String, in chunks: [DocumentChunk], limit: Int = 6, characterBudget: Int) -> [DocumentChunk] {
-        let queryTerms = Set(tokens(query))
+    ///
+    /// `similarities` (each chunk's closeness in meaning to the query, from embeddings) adds a
+    /// second ranking; the two are fused by reciprocal rank, so a passage that says the same
+    /// thing in other words is found as well as one that shares the query's words.
+    static func search(_ query: String, in chunks: [DocumentChunk], similarities: [Float]? = nil,
+                       limit: Int = 6, characterBudget: Int) -> [DocumentChunk] {
         guard !chunks.isEmpty else { return [] }
-        guard !queryTerms.isEmpty else { return Array(chunks.prefix(limit)) }
+        let meaning = similarities.flatMap { $0.count == chunks.count ? $0 : nil }
+        let keywords = keywordScores(query, in: chunks)
+        guard keywords != nil || meaning != nil else { return Array(chunks.prefix(limit)) }
 
+        var fused = [Double](repeating: 0, count: chunks.count)
+        if let keywords {
+            let ranked = chunks.indices.filter { keywords[$0] > 0 }.sorted { keywords[$0] > keywords[$1] }
+            for (rank, index) in ranked.enumerated() { fused[index] += 1 / (fusionConstant + Double(rank + 1)) }
+        }
+        if let meaning {
+            let ranked = chunks.indices.sorted { meaning[$0] > meaning[$1] }
+            for (rank, index) in ranked.enumerated() { fused[index] += 1 / (fusionConstant + Double(rank + 1)) }
+        }
+        var selected: [DocumentChunk] = []
+        var used = 0
+        for index in chunks.indices.filter({ fused[$0] > 0 }).sorted(by: { fused[$0] > fused[$1] }) where selected.count < limit {
+            let chunk = chunks[index]
+            guard used + chunk.text.count <= characterBudget else { continue }
+            selected.append(chunk)
+            used += chunk.text.count
+        }
+        if selected.isEmpty { selected = Array(chunks.prefix(1)) }
+        return selected.sorted { ($0.documentTitle, $0.index) < ($1.documentTitle, $1.index) }
+    }
+
+    /// Reciprocal rank fusion's usual constant: it keeps one list's top result from outweighing
+    /// strong agreement between both lists.
+    static let fusionConstant = 60.0
+
+    /// BM25 score of every chunk (0 when no query word occurs), or nil when the query has no
+    /// searchable words.
+    static func keywordScores(_ query: String, in chunks: [DocumentChunk]) -> [Double]? {
+        let queryTerms = Set(tokens(query))
+        guard !queryTerms.isEmpty else { return nil }
         let tokenized = chunks.map { tokens($0.text) }
         let averageLength = Double(tokenized.reduce(0) { $0 + $1.count }) / Double(max(tokenized.count, 1))
         var documentFrequency: [String: Int] = [:]
@@ -72,8 +109,7 @@ enum Retrieval {
         let k1 = 1.4
         let b = 0.75
         let n = Double(chunks.count)
-        var scored: [(chunk: DocumentChunk, score: Double)] = []
-        for (index, terms) in tokenized.enumerated() {
+        return tokenized.map { terms in
             var frequencies: [String: Int] = [:]
             for term in terms where queryTerms.contains(term) { frequencies[term, default: 0] += 1 }
             var score = 0.0
@@ -83,17 +119,8 @@ enum Retrieval {
                 let tf = Double(frequency)
                 score += idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * Double(terms.count) / max(averageLength, 1)))
             }
-            if score > 0 { scored.append((chunks[index], score)) }
+            return score
         }
-        var selected: [DocumentChunk] = []
-        var used = 0
-        for candidate in scored.sorted(by: { $0.score > $1.score }) where selected.count < limit {
-            guard used + candidate.chunk.text.count <= characterBudget else { continue }
-            selected.append(candidate.chunk)
-            used += candidate.chunk.text.count
-        }
-        if selected.isEmpty { selected = Array(chunks.prefix(1)) }
-        return selected.sorted { ($0.documentTitle, $0.index) < ($1.documentTitle, $1.index) }
     }
 
     private static let stopWords: Set<String> = [

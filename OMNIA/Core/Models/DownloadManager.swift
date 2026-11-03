@@ -19,6 +19,8 @@ struct DownloadRequest: Codable, Hashable, Sendable {
     var catalogID: String?
     /// For an image encoder: the installed model it's for (it isn't a model of its own).
     var projectorFor: String? = nil
+    /// The library's embedding model (see `SemanticIndex`), not a chat model.
+    var embeddingModel: Bool? = nil
 }
 
 enum DownloadPhase: Equatable, Sendable {
@@ -92,6 +94,7 @@ final class DownloadManager: NSObject {
     @ObservationIgnored var backgroundCompletionHandler: (() -> Void)?
     @ObservationIgnored private var speedReference: [String: (date: Date, bytes: Int64)] = [:]
     private let store: ModelStore
+    private let semanticIndex: SemanticIndex?
     private let settings: AppSettings
     private nonisolated let progressThrottle = OSAllocatedUnfairLock<[String: TimeInterval]>(initialState: [:])
 
@@ -101,8 +104,9 @@ final class DownloadManager: NSObject {
 
     var hasActiveDownloads: Bool { items.values.contains { $0.phase.isActive } }
 
-    init(store: ModelStore, settings: AppSettings) {
+    init(store: ModelStore, semanticIndex: SemanticIndex? = nil, settings: AppSettings) {
         self.store = store
+        self.semanticIndex = semanticIndex
         self.settings = settings
         super.init()
         let configuration = URLSessionConfiguration.background(withIdentifier: Self.sessionIdentifier)
@@ -354,6 +358,21 @@ final class DownloadManager: NSObject {
                     digest = computed
                 }
                 let verifiedDigest = digest
+                if request.embeddingModel == true {
+                    _ = try GGUFInspector.inspect(fileAt: staged)
+                    try await MainActor.run {
+                        guard let self else { return }
+                        guard let index = self.semanticIndex else { throw EmbeddingRuntime.Failure.loadFailed }
+                        try index.install(fileAt: staged, entry: EmbeddingCatalog.recommended, sha256: verifiedDigest)
+                        self.items[request.id]?.phase = .completed
+                        self.saveState()
+                    }
+                    try? await Task.sleep(for: .seconds(4))
+                    await MainActor.run {
+                        if self?.items[request.id]?.phase == .completed { self?.items[request.id] = nil }
+                    }
+                    return
+                }
                 if let owner = request.projectorFor {
                     guard GGUFInspector.isImageEncoder(fileAt: staged) else {
                         throw ProjectorError.notAnEncoder(request.fileName)
@@ -439,9 +458,14 @@ final class DownloadManager: NSObject {
               let persisted = try? JSONDecoder().decode([PersistedItem].self, from: data) else { return }
         for entry in persisted {
             let request = entry.request
-            let installed = request.projectorFor != nil
-                ? store.isProjectorInstalled(repo: request.repo, fileName: request.fileName)
-                : store.isInstalled(repo: request.repo, fileName: request.fileName)
+            let installed: Bool
+            if request.embeddingModel == true {
+                installed = semanticIndex?.embedder?.fileName == request.fileName
+            } else if request.projectorFor != nil {
+                installed = store.isProjectorInstalled(repo: request.repo, fileName: request.fileName)
+            } else {
+                installed = store.isInstalled(repo: request.repo, fileName: request.fileName)
+            }
             guard !installed else { continue }
             let phase: DownloadPhase
             switch entry.state {

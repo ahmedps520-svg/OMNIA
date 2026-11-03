@@ -16,6 +16,7 @@ final class AppServices {
     let importer: ModelImporter
     let engine: InferenceEngine
     let container: ModelContainer
+    let semanticIndex: SemanticIndex
     let chat: ChatService
     let compare: CompareService
 
@@ -27,11 +28,12 @@ final class AppServices {
         monitor = PerformanceMonitor()
         connectivity = ConnectivityMonitor()
         store = ModelStore()
-        downloads = DownloadManager(store: store, settings: settings)
+        container = PersistenceSchema.makeContainer()
+        semanticIndex = SemanticIndex(container: container)
+        downloads = DownloadManager(store: store, semanticIndex: semanticIndex, settings: settings)
         importer = ModelImporter(store: store)
         engine = InferenceEngine(store: store, settings: settings, device: device, monitor: monitor)
-        container = PersistenceSchema.makeContainer()
-        chat = ChatService(engine: engine, store: store, settings: settings, container: container)
+        chat = ChatService(engine: engine, store: store, settings: settings, container: container, semanticIndex: semanticIndex)
         compare = CompareService(engine: engine, store: store, settings: settings, container: container)
 
         downloads.onInstalled = { [weak self] model in
@@ -64,6 +66,8 @@ final class AppServices {
         if let id = settings.defaultModelID, store.model(id: id) == nil {
             settings.defaultModelID = store.sortedByRecentUse.first?.id
         }
+        // Documents added while the embedding model was away (or before it was installed).
+        semanticIndex.scheduleIndexing()
     }
 
     /// Replies still marked as streaming were cut off when OMNIA was terminated:

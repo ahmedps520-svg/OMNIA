@@ -57,10 +57,12 @@ A small "draft" model guesses several tokens ahead and the big model checks them
 - Memory planning keeps room for the encoder, which loads with the first image.
 - Tests: image preparation, prompt placement, encoder storage, chat, and real image runs with SmolVLM and Qwen3.5 0.8B on CI.
 
-## Stage 5: Smarter document search
+## Stage 5: Smarter document search (implemented)
 
-- An optional small embedding model finds passages by meaning, combined with the existing keyword search (hybrid ranking).
-- Documents are indexed once, on device.
+- An optional small embedding model (EmbeddingGemma 2, 310 MB, downloaded from the Library) finds passages by meaning, combined with the existing keyword search by reciprocal rank fusion.
+- Documents are indexed once, on device, in the background; new documents are indexed as they're added. Vectors are stored with each document in half precision.
+- Used for the excerpts placed in the prompt and by the search-documents tool. Without the model, or when it can't run (background, low memory), search falls back to keywords.
+- Tests: fusion ranking, vector storage, and real embeddings and indexing with BGE small on CI.
 
 ## Stage 6: Workspace panel, browser and web access
 

@@ -220,6 +220,11 @@ final class KnowledgeDocument {
     var byteSize: Int
     var characterCount: Int
     var createdAt: Date
+    /// Embedding vectors of the document's chunks (see `EmbeddingVectors`), the embedding model
+    /// that made them and how many there are; nil until `SemanticIndex` indexes the document.
+    @Attribute(.externalStorage) var embeddingsData: Data?
+    var embeddingModelID: String?
+    var embeddingCount: Int?
 
     init(title: String, fileName: String, kind: DocumentKind, text: String, byteSize: Int) {
         id = UUID()
