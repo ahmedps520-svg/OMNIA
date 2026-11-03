@@ -25,7 +25,7 @@ final class ConversationMemoryStore {
 
     let directory: URL
 
-    init(directory: URL = ConversationMemoryStore.defaultDirectory) {
+    nonisolated init(directory: URL = ConversationMemoryStore.defaultDirectory) {
         self.directory = directory
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
