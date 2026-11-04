@@ -223,7 +223,7 @@ struct ClusterHostTests {
 
     @Test func aDeviceWithTheCodeJoinsAtOnce() throws {
         let host = try makeHost()
-        let (status, reply) = try join(host, worker("a", kind: "apple", name: "iPhone 18 Pro"))
+        let (status, reply) = try join(host, worker("a", name: "iPhone 18 Pro", kind: "apple"))
         #expect(status == 200)
         #expect(reply.ok)
         #expect(reply.cluster == host.name)
