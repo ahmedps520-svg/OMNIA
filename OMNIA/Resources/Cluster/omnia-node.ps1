@@ -116,12 +116,15 @@ namespace OmniaNode
             Ui.Start();
             bool selfTest = false;
             int code;
+            Mutex single = null;
             try
             {
                 Options options = Options.Parse(args);
                 selfTest = options.SelfTest;
                 ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;  // GitHub requires TLS 1.2
                 ServicePointManager.Expect100Continue = false;  // POST bodies go at once, not after a "100 Continue"
+                single = AcquireSingleInstance();
+                if (single == null) throw new NodeException("OMNIA Node is already running on this PC, in another window.");
                 code = selfTest ? SelfTest.Run() : new Node(options).Run();
             }
             catch (OperationCanceledException)
@@ -138,9 +141,30 @@ namespace OmniaNode
                 Ui.Line(selfTest ? e.ToString() : "OMNIA Node stopped after an unexpected error (" + e.GetType().Name + ": " + e.Message + ")");
                 code = 1;
             }
+            if (single != null)
+            {
+                single.ReleaseMutex();
+                single.Dispose();
+            }
             if (code != 0 && !selfTest) Ui.PauseIfWindowCloses();
             Ui.Finish();
             return code;
+        }
+
+        // Two nodes on one PC would share an id, and each would stop the other's rpc-server.
+        static Mutex AcquireSingleInstance()
+        {
+            var mutex = new Mutex(false, @"Local\OMNIA-Node");
+            try
+            {
+                if (mutex.WaitOne(TimeSpan.FromSeconds(5))) return mutex;  // a node that's just stopping gets a moment
+            }
+            catch (AbandonedMutexException)
+            {
+                return mutex;  // its last owner ended without releasing it; it's ours now
+            }
+            mutex.Dispose();
+            return null;
         }
 
         // For the main thread's waits: a stop request unwinds it from wherever it is.
@@ -228,12 +252,6 @@ namespace OmniaNode
 
         public int Run()
         {
-            Mutex single = AcquireSingleInstance();
-            if (single == null)
-            {
-                Ui.Line("OMNIA Node is already running on this PC, in another window.");
-                return 1;
-            }
             try
             {
                 HandleStopRequests();
@@ -243,8 +261,6 @@ namespace OmniaNode
             finally
             {
                 Shutdown();
-                single.ReleaseMutex();
-                single.Dispose();
             }
         }
 
@@ -374,6 +390,7 @@ namespace OmniaNode
                 if (Program.Stop.IsCancellationRequested) return false;
                 lastRequestMilliseconds = reply.Milliseconds;
                 int status = reply.Status;
+                if (reply.Text("cluster") != null) cluster = reply.Text("cluster");
                 if (status == 200)
                 {
                     Joined(reply);
@@ -384,7 +401,7 @@ namespace OmniaNode
                     // A PC the iPad hasn't seen before needs one tap of approval there.
                     registered = true;
                     state = State.Pending;
-                    if (!toldPending) Ui.Line(reply.Text("message") ?? "Waiting for approval: tap Allow on " + cluster + ".");
+                    if (!toldPending) Ui.Line(reply.Text("message") ?? "Waiting for approval on " + cluster + ": tap Allow on the iPad.");
                     toldPending = true;
                     if (Program.WaitForStop(3000)) return false;
                     continue;
@@ -413,8 +430,6 @@ namespace OmniaNode
 
         void Joined(Reply reply)
         {
-            string name = reply.Text("cluster");
-            if (name != null) cluster = name;
             var allowed = new List<IPAddress>(hostAddresses);
             foreach (object item in reply.List("hostAddresses"))
             {
@@ -559,22 +574,6 @@ namespace OmniaNode
                 if (relay != null) relay.Stop();
                 if (rpc != null) rpc.Dispose();
             }
-        }
-
-        // Two nodes on one PC would share an id and fight over rpc-server.
-        static Mutex AcquireSingleInstance()
-        {
-            var mutex = new Mutex(false, @"Local\OMNIA-Node");
-            try
-            {
-                if (mutex.WaitOne(TimeSpan.FromSeconds(5))) return mutex;  // a node that's just stopping gets a moment
-            }
-            catch (AbandonedMutexException)
-            {
-                return mutex;  // its last owner ended without releasing it; it's ours now
-            }
-            mutex.Dispose();
-            return null;
         }
 
         // The id the iPad knows this PC by (it remembers approved PCs by it), created once.
@@ -1010,7 +1009,6 @@ namespace OmniaNode
             try
             {
                 client.NoDelay = true;
-                KeepAlive(client);
                 upstream.NoDelay = true;
                 upstream.Connect(IPAddress.Loopback, relay.TargetPort);
             }
@@ -1023,6 +1021,7 @@ namespace OmniaNode
             {
                 return;  // replaced while connecting
             }
+            KeepAlive(client);
             var back = new Thread(delegate() { Pump(upstream, client); });
             back.IsBackground = true;
             back.Start();
@@ -1072,7 +1071,12 @@ namespace OmniaNode
             BitConverter.GetBytes(1).CopyTo(values, 0);      // on
             BitConverter.GetBytes(30000).CopyTo(values, 4);  // idle time before the first probe, ms
             BitConverter.GetBytes(5000).CopyTo(values, 8);   // time between probes, ms
-            socket.IOControl(IOControlCode.KeepAliveValues, values, null);
+            try
+            {
+                socket.IOControl(IOControlCode.KeepAliveValues, values, null);
+            }
+            catch (SocketException) { }  // the session works without it
+            catch (ObjectDisposedException) { }
         }
     }
 
@@ -1391,7 +1395,7 @@ namespace OmniaNode
             string part = zip + ".part";
             for (int round = 1; ; round++)
             {
-                Download(Release + asset.Name, part, what);
+                Download(asset.Name, part, what);
                 Ui.Status("Checking " + asset.Name + "...");
                 if (Sha256Of(part) == asset.Sha256) break;
                 File.Delete(part);
@@ -1404,14 +1408,13 @@ namespace OmniaNode
             return zip;
         }
 
-        static void Download(string url, string part, string what)
+        static void Download(string name, string part, string what)
         {
-            string name = Path.GetFileName(url);
             for (int attempt = 1; ; attempt++)
             {
                 try
                 {
-                    DownloadOnce(url, part, what);
+                    DownloadOnce(Release + name, part, what);
                     return;
                 }
                 catch (WebException e)
@@ -1775,6 +1778,7 @@ namespace OmniaNode
         static readonly object Gate = new object();
         static bool console;
         static Encoding savedEncoding;
+        static string savedTitle;
         static string status = "";
 
         public static bool IsConsole
@@ -1782,15 +1786,17 @@ namespace OmniaNode
             get { return console; }
         }
 
+        // Cluster and GPU names can be in any script, so the console gets UTF-8. It and the window
+        // title go back to what they were on exit, for the shell that ran the node.
         public static void Start()
         {
             try
             {
                 console = !Console.IsOutputRedirected;
                 if (!console) return;
-                // Cluster and GPU names can be in any script. Restored on exit, for the shell that ran us.
                 savedEncoding = Console.OutputEncoding;
                 Console.OutputEncoding = new UTF8Encoding(false);
+                savedTitle = Console.Title;
                 Console.Title = "OMNIA Node";
             }
             catch (IOException) { }  // a console that can't change: names may show as "?"
@@ -1799,10 +1805,10 @@ namespace OmniaNode
         public static void Finish()
         {
             ClearStatus();
-            if (savedEncoding == null) return;
             try
             {
-                Console.OutputEncoding = savedEncoding;
+                if (savedEncoding != null) Console.OutputEncoding = savedEncoding;
+                if (savedTitle != null) Console.Title = savedTitle;
             }
             catch (IOException) { }
         }

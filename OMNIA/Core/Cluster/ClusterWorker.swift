@@ -51,8 +51,9 @@ final class ClusterWorker {
         if let saved = defaults.string(forKey: "clusterWorkerID") {
             id = saved
         } else {
-            id = UUID().uuidString
-            defaults.set(id, forKey: "clusterWorkerID")
+            let fresh = UUID().uuidString
+            defaults.set(fresh, forKey: "clusterWorkerID")
+            id = fresh
         }
     }
 
@@ -187,6 +188,7 @@ final class ClusterWorker {
     /// Checks in until the host forgets this device (it restarted), refuses it, or lending stops.
     private func heartbeat(_ invitation: ClusterInvitation, relay: ClusterRelay, every seconds: Int) async -> HeartbeatEnd {
         var rtt: Double?
+        var unreachableSince: ContinuousClock.Instant?
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(max(1, seconds)))
             guard !Task.isCancelled else { return .cancelled }
@@ -201,12 +203,17 @@ final class ClusterWorker {
             case .ok:
                 rtt = started.secondsElapsed * 1000
                 hostUnreachable = false
+                unreachableSince = nil
             case .forgotten:
                 return .forgotten
             case .refused(let message):
                 return .refused(message)
             case .unreachable:
                 hostUnreachable = true
+                // A host gone this long won't use what it left here: free it for its return.
+                let since = unreachableSince ?? started
+                unreachableSince = since
+                if since.secondsElapsed > 30 { relay.disconnect() }
             }
         }
         return .cancelled

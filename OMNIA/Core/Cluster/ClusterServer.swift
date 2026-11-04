@@ -135,6 +135,12 @@ final class ClusterRelay: @unchecked Sendable {
     private static func parameters() -> NWParameters {
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
+        // A host that vanishes without closing its connection (it crashed, or lost power) is
+        // noticed within a minute, and the memory its model holds here is freed.
+        tcp.enableKeepalive = true
+        tcp.keepaliveIdle = 30
+        tcp.keepaliveInterval = 5
+        tcp.keepaliveCount = 4
         let parameters = NWParameters(tls: nil, tcp: tcp)
         parameters.allowLocalEndpointReuse = true
         return parameters

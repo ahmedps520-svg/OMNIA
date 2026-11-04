@@ -1,0 +1,43 @@
+# Self-test of the Windows PC node (OMNIA/Resources/Cluster/omnia-node.ps1) on a GPU-less runner:
+# Windows PowerShell 5.1 compiles it, and it downloads and verifies llama.cpp's CPU build, starts
+# rpc-server behind its relay and checks the relay's access control on loopback (no iPad needed).
+name: Cluster node
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'OMNIA/Resources/Cluster/**'
+      - '.github/workflows/cluster-node.yml'
+  pull_request:
+    paths:
+      - 'OMNIA/Resources/Cluster/**'
+      - '.github/workflows/cluster-node.yml'
+  workflow_dispatch:
+
+jobs:
+  self-test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # The outcome and the run's last lines as an annotation, readable from the public API.
+      - name: Self-test
+        shell: pwsh
+        env:
+          OMNIA_NODE_SELFTEST: '1'
+          OMNIA_NODE_BACKEND: cpu
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'cluster-node.log'
+          powershell -NoProfile -ExecutionPolicy Bypass -File OMNIA/Resources/Cluster/omnia-node.ps1 2>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          $lines = @(Get-Content -LiteralPath $log | ForEach-Object { "$_".Trim() } | Where-Object { $_ } | Select-Object -Last 15 |
+            ForEach-Object { if ($_.Length -gt 300) { $_.Substring(0, 300) + '...' } else { $_ } })
+          $text = ($lines -join "`n").Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+          if ($code -eq 0) {
+            Write-Output "::notice title=Cluster node::$text"
+          } else {
+            Write-Output "::error title=Cluster node::Self-test exited with code $code%0A$text"
+          }
+          exit $code

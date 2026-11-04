@@ -66,8 +66,9 @@ final class ClusterHost {
         if let saved = defaults.string(forKey: Self.codeKey), saved.count == 10 {
             code = saved
         } else {
-            code = ClusterInvitation.makeCode()
-            defaults.set(code, forKey: Self.codeKey)
+            let fresh = ClusterInvitation.makeCode()
+            defaults.set(fresh, forKey: Self.codeKey)
+            code = fresh
         }
         approved = Set(defaults.stringArray(forKey: Self.approvedKey) ?? [])
     }
@@ -395,8 +396,14 @@ final class ClusterHost {
         let script = source
             .replacingOccurrences(of: "__OMNIA_HOST__", with: host)
             .replacingOccurrences(of: "__OMNIA_TOKEN__", with: Self.nodeToken)
-            .replacingOccurrences(of: "__OMNIA_CLUSTER_NAME__", with: name.replacingOccurrences(of: "'", with: "''"))
+            .replacingOccurrences(of: "__OMNIA_CLUSTER_NAME__", with: Self.powerShellQuoted(name))
         return .text(script)
+    }
+
+    /// Text for inside a single-quoted PowerShell string. PowerShell also ends one at the curly
+    /// quotes iOS types for an apostrophe ("Ahmed’s iPad"), so each is doubled like a straight one.
+    static func powerShellQuoted(_ text: String) -> String {
+        text.replacingOccurrences(of: "['\u{2018}\u{2019}\u{201A}\u{201B}]", with: "$0$0", options: .regularExpression)
     }
 
     static func joinCommandFile(host: String) -> String {

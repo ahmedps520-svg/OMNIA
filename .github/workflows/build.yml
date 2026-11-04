@@ -27,14 +27,25 @@ jobs:
       # TestFlight workflow restores the same cache.
       - name: Restore llama.cpp framework
         id: llama
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: Packages/LlamaFramework/llama.xcframework
           key: llama-xcframework-${{ hashFiles('Packages/LlamaFramework/Package.swift', 'scripts/build-llama-xcframework.sh', 'scripts/llama/cluster.patch') }}
 
       - name: Build llama.cpp framework
         if: steps.llama.outputs.cache-hit != 'true'
-        run: scripts/build-llama-xcframework.sh
+        run: |
+          # Logged where "Report build errors" finds compiler errors.
+          set -o pipefail
+          scripts/build-llama-xcframework.sh 2>&1 | tee "$RUNNER_TEMP/llama-build.log"
+
+      # Saved right away, so a failure later in the run doesn't throw the build away.
+      - name: Save llama.cpp framework
+        if: steps.llama.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: Packages/LlamaFramework/llama.xcframework
+          key: ${{ steps.llama.outputs.cache-primary-key }}
 
       # MLX compiles Metal shaders; the image installs the toolchain, but make sure. (-showComponent
       # succeeds even when it is missing, so its status is read.)

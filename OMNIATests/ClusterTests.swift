@@ -341,6 +341,13 @@ struct ClusterHostTests {
         #expect(get("/nothing").status == 404)
     }
 
+    @Test func quotesNamesForPowerShell() {
+        #expect(ClusterHost.powerShellQuoted("Ahmed's iPad") == "Ahmed''s iPad")
+        // iOS types a curly apostrophe, which ends a PowerShell string just the same.
+        #expect(ClusterHost.powerShellQuoted("Ahmed\u{2019}s iPad") == "Ahmed\u{2019}\u{2019}s iPad")
+        #expect(ClusterHost.powerShellQuoted("iPad Pro 13-inch (M5)") == "iPad Pro 13-inch (M5)")
+    }
+
     @Test func aNewCodeSendsEveryoneAway() throws {
         let host = try makeHost()
         let old = host.code

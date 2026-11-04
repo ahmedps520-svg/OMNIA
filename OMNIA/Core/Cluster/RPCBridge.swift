@@ -26,6 +26,9 @@ enum RPCBridge {
 
     private static let functions: Functions? = {
         LlamaRuntime.prepareBackend()
+        // Never ask two workers to connect to each other directly (llama.cpp's tensor-parallel
+        // "COMM_INIT"): the worker would listen on every interface itself, bypassing its relay.
+        setenv("GGML_RPC_NO_COMM", "1", 1)
         guard let registry = ggml_backend_reg_by_name("RPC") else { return nil }
         func function<T>(_ name: String, as type: T.Type) -> T? {
             guard let address = ggml_backend_reg_get_proc_address(registry, name) else { return nil }
