@@ -81,20 +81,25 @@ struct OMNIAShortcuts: AppShortcutsProvider {
     }
 }
 
-/// Shows a conversation started outside a window (Siri, Shortcuts, shared items) in the window
-/// that handles the request first.
+/// Shows a conversation started outside a window (Siri, Shortcuts, shared items), or a section a
+/// link opens (a cluster's QR code), in the window that handles the request first.
 @MainActor
 @Observable
 final class AppNavigator {
     struct Request: Equatable {
         let id = UUID()
-        let conversation: UUID
+        var conversation: UUID?
+        var section: SidebarSection?
     }
 
     private(set) var request: Request?
 
     func show(_ conversation: UUID) {
         request = Request(conversation: conversation)
+    }
+
+    func show(_ section: SidebarSection) {
+        request = Request(section: section)
     }
 
     func handled(_ request: Request) {

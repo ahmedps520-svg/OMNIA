@@ -123,6 +123,29 @@ enum DeviceCatalog {
         // Apple quotes +50% bandwidth over A19 Pro (76.8 GB/s); 115 GB/s is derived, not published.
         KnownDevice(identifier: "iPhone19,2", name: "iPhone 18 Pro", chip: "Apple A20 Pro", deviceClass: .iPhone18Pro, memoryBandwidthGBs: 115),
         KnownDevice(identifier: "iPhone19,3", name: "iPhone 18 Pro Max", chip: "Apple A20 Pro", deviceClass: .iPhone18Pro, memoryBandwidthGBs: 115),
-        KnownDevice(identifier: "iPhone19,7", name: "iPhone 18 Pro Max", chip: "Apple A20 Pro", deviceClass: .iPhone18Pro, memoryBandwidthGBs: 115)
+        KnownDevice(identifier: "iPhone19,7", name: "iPhone 18 Pro Max", chip: "Apple A20 Pro", deviceClass: .iPhone18Pro, memoryBandwidthGBs: 115),
+
+        // Not targets, but they lend their GPUs to a cluster, where their names and bandwidth
+        // (LPDDR type × 64-bit bus, or the M-series figure) decide what they're given.
+        KnownDevice(identifier: "iPhone13,3", name: "iPhone 12 Pro", chip: "Apple A14 Bionic", deviceClass: .unsupported, memoryBandwidthGBs: 34),
+        KnownDevice(identifier: "iPhone13,4", name: "iPhone 12 Pro Max", chip: "Apple A14 Bionic", deviceClass: .unsupported, memoryBandwidthGBs: 34),
+        KnownDevice(identifier: "iPhone14,2", name: "iPhone 13 Pro", chip: "Apple A15 Bionic", deviceClass: .unsupported, memoryBandwidthGBs: 34),
+        KnownDevice(identifier: "iPhone14,3", name: "iPhone 13 Pro Max", chip: "Apple A15 Bionic", deviceClass: .unsupported, memoryBandwidthGBs: 34),
+        KnownDevice(identifier: "iPhone15,2", name: "iPhone 14 Pro", chip: "Apple A16 Bionic", deviceClass: .unsupported, memoryBandwidthGBs: 51),
+        KnownDevice(identifier: "iPhone15,3", name: "iPhone 14 Pro Max", chip: "Apple A16 Bionic", deviceClass: .unsupported, memoryBandwidthGBs: 51),
+        KnownDevice(identifier: "iPhone16,1", name: "iPhone 15 Pro", chip: "Apple A17 Pro", deviceClass: .unsupported, memoryBandwidthGBs: 51),
+        KnownDevice(identifier: "iPhone16,2", name: "iPhone 15 Pro Max", chip: "Apple A17 Pro", deviceClass: .unsupported, memoryBandwidthGBs: 51),
+        KnownDevice(identifier: "iPhone17,1", name: "iPhone 16 Pro", chip: "Apple A18 Pro", deviceClass: .unsupported, memoryBandwidthGBs: 60),
+        KnownDevice(identifier: "iPhone17,2", name: "iPhone 16 Pro Max", chip: "Apple A18 Pro", deviceClass: .unsupported, memoryBandwidthGBs: 60),
+        KnownDevice(identifier: "iPhone18,1", name: "iPhone 17 Pro", chip: "Apple A19 Pro", deviceClass: .unsupported, memoryBandwidthGBs: 77),
+        KnownDevice(identifier: "iPhone18,2", name: "iPhone 17 Pro Max", chip: "Apple A19 Pro", deviceClass: .unsupported, memoryBandwidthGBs: 77),
+        KnownDevice(identifier: "iPad15,3", name: "iPad Air 11-inch (M3)", chip: "Apple M3", deviceClass: .unsupported, memoryBandwidthGBs: 100),
+        KnownDevice(identifier: "iPad15,4", name: "iPad Air 11-inch (M3)", chip: "Apple M3", deviceClass: .unsupported, memoryBandwidthGBs: 100),
+        KnownDevice(identifier: "iPad15,5", name: "iPad Air 13-inch (M3)", chip: "Apple M3", deviceClass: .unsupported, memoryBandwidthGBs: 100),
+        KnownDevice(identifier: "iPad15,6", name: "iPad Air 13-inch (M3)", chip: "Apple M3", deviceClass: .unsupported, memoryBandwidthGBs: 100),
+        KnownDevice(identifier: "iPad16,3", name: "iPad Pro 11-inch (M4)", chip: "Apple M4", deviceClass: .unsupported, memoryBandwidthGBs: 120),
+        KnownDevice(identifier: "iPad16,4", name: "iPad Pro 11-inch (M4)", chip: "Apple M4", deviceClass: .unsupported, memoryBandwidthGBs: 120),
+        KnownDevice(identifier: "iPad16,5", name: "iPad Pro 13-inch (M4)", chip: "Apple M4", deviceClass: .unsupported, memoryBandwidthGBs: 120),
+        KnownDevice(identifier: "iPad16,6", name: "iPad Pro 13-inch (M4)", chip: "Apple M4", deviceClass: .unsupported, memoryBandwidthGBs: 120)
     ]
 }

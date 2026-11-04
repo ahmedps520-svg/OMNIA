@@ -33,6 +33,8 @@ final class InferenceEngine {
         let backend: any InferenceBackend
         let plan: LoadPlan
         var lastUsed: Date
+        /// How the model is spread when it runs on the cluster this device hosts.
+        var cluster: ClusterPlan? = nil
         var info: LoadedModelInfo { backend.info }
     }
 
@@ -64,6 +66,11 @@ final class InferenceEngine {
         return try await LlamaRuntime.load(modelID: model.id, displayName: model.displayName, fileURL: file,
                                            projectorURL: projector, configuration: configuration, progress: progress)
     }
+    /// The devices of the cluster this device hosts, ready to take layers (empty or nil without one).
+    @ObservationIgnored var clusterDevices: (@MainActor () -> [ClusterDevice])?
+    /// Told which workers dropped out of a model, so the next plan leaves them out until they
+    /// check in again.
+    @ObservationIgnored var onClusterDevicesLost: (@MainActor ([String]) -> Void)?
     @ObservationIgnored private var idleTimer: Timer?
     @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     @ObservationIgnored private var backgroundUnloadWork: DispatchWorkItem?
@@ -133,6 +140,43 @@ final class InferenceEngine {
                                   allowance: allowance, flashAttention: settings.flashAttention)
     }
 
+    /// The best layout for `model` over this device and its cluster's workers, or nil without
+    /// workers, for models the cluster can't run (MLX, Apple's), or when it doesn't fit even there.
+    func clusterPlan(for model: InstalledModel, budget: MemoryBudget? = nil) -> ClusterPlan? {
+        guard !model.isMLX, !model.isSystem else { return nil }
+        // The image encoder, when installed, loads here with the first image.
+        return clusterPlan(facts: model.facts, fileSize: model.sizeBytes, hostReserve: model.projectorReserve,
+                           contextLength: model.settings.contextLength, kvChoice: model.settings.kvCache, budget: budget)
+    }
+
+    /// The same for a GGUF file that isn't installed yet (a catalog download).
+    func clusterPlan(facts: ArchitectureFacts, fileSize: UInt64, hostReserve: UInt64 = 0, contextLength: Int? = nil,
+                     kvChoice: KVCacheChoice? = nil, budget: MemoryBudget? = nil) -> ClusterPlan? {
+        guard RPCBridge.isAvailable, let workers = clusterDevices?(), !workers.isEmpty else { return nil }
+        let budget = budget ?? currentBudget()
+        let resident = budget.allowance.resident > hostReserve ? budget.allowance.resident - hostReserve : 0
+        let host = ClusterDevice(id: "host", name: device.name, endpoint: nil, deviceIndex: 0, memoryBudget: resident,
+                                 bandwidthGBs: device.memoryBandwidthGBs, latencyMs: 0)
+        let requested = min(contextLength ?? (settings.contextLength > 0 ? settings.contextLength : profile.defaultContext),
+                            profile.maximumContext)
+        let kvTypes = MemoryPlanner.allowedKVTypes(kvChoice ?? settings.kvCache, profile: profile,
+                                                   flashAttention: settings.flashAttention)
+        return ClusterPlanner.plan(facts, fileSize: fileSize, requestedContext: requested, kvTypes: kvTypes,
+                                   microBatch: profile.microBatchSize, flashAttention: settings.flashAttention,
+                                   host: host, workers: workers, spread: settings.clusterSpread)
+    }
+
+    /// Whether `model` would load on the cluster rather than this device alone: when it doesn't
+    /// fit here, or (if chosen in Settings) when the cluster runs it clearly faster.
+    private func prefersCluster(_ candidate: ClusterPlan, over local: LoadPlan, model: InstalledModel) -> Bool {
+        // A plan that keeps everything here is the local planner's call, not the cluster's.
+        guard !candidate.workers.isEmpty else { return false }
+        if !local.fits { return true }
+        guard settings.clusterUse == .whenFaster else { return false }
+        let alone = MemoryPlanner.estimatedTokensPerSecond(fileSize: model.sizeBytes, facts: model.facts, device: device)
+        return candidate.estimatedTokensPerSecond > alone * 1.25
+    }
+
     // MARK: Loading
 
     /// Returns the loaded backend for `model`, loading it (and unloading others) if needed.
@@ -172,13 +216,35 @@ final class InferenceEngine {
                 if loadPlan.fits && !loadPlan.wasReduced { break }
             }
         }
+        // The cluster this device hosts takes the model when it can't fit here (or, if chosen, when
+        // the cluster runs it clearly faster). It plans for this device's whole budget, so every
+        // other model is released first.
+        var cluster: ClusterPlan?
+        if let candidate = clusterPlan(for: model), prefersCluster(candidate, over: loadPlan, model: model) {
+            for other in loaded.values { await unload(other.id) }
+            cluster = clusterPlan(for: model) ?? candidate
+        }
+        if let cluster {
+            loadPlan = LoadPlan(contextLength: cluster.contextLength, kvType: cluster.kvType,
+                                estimate: MemoryEstimate(weights: cluster.host.bytes, kvCache: 0, compute: 0, overhead: 0,
+                                                         contextLength: cluster.contextLength, kvType: cluster.kvType),
+                                fits: true, requestedContext: loadPlan.requestedContext, maxContextThatFits: nil)
+            let devices = cluster.shares.count == 2 ? "this device and 1 more" : "this device and \(cluster.shares.count - 1) more"
+            post("point.3.connected.trianglepath.dotted", "\(model.displayName) loads across \(devices) of your cluster, with a \(ByteFormat.tokens(cluster.contextLength)) context (about \(Int(cluster.estimatedTokensPerSecond.rounded())) tokens per second, estimated).")
+        }
+
         // The user may load a model larger than the budget anyway: with a short context, iOS decides.
-        let beyondLimit = !loadPlan.fits && model.settings.ignoreMemoryLimit == true
+        let beyondLimit = cluster == nil && !loadPlan.fits && model.settings.ignoreMemoryLimit == true
         guard loadPlan.fits || beyondLimit else {
             let budget = currentBudget()
+            let clusterHint = RPCBridge.isAvailable && !model.isMLX
+                ? (clusterDevices?().isEmpty == false
+                    ? " Your cluster can't hold it either; add devices to it, or "
+                    : " Host a cluster (Cluster in the sidebar) to run it across your other devices, or ")
+                : " "
             throw InferenceError.insufficientMemory(
                 required: loadPlan.estimate.total, available: budget.usable,
-                suggestion: "Choose a smaller quantization, or turn on Load Beyond the Memory Limit in the model's settings to try it anyway.")
+                suggestion: "Choose a smaller quantization." + clusterHint + "turn on Load Beyond the Memory Limit in the model's settings to try it anyway.")
         }
         if beyondLimit {
             // The planner's requested context already respects the model's trained length.
@@ -189,8 +255,9 @@ final class InferenceEngine {
             post("exclamationmark.triangle", "\(model.displayName) is larger than OMNIA's memory budget, so it loads with a \(ByteFormat.tokens(loadPlan.contextLength)) context. Replies may be slow, and iOS may close OMNIA if memory runs out.")
         }
 
-        // Speculative decoding: the chosen draft model joins only if it fits beside this one.
-        let draft = draftPlan(for: model, loadPlan: loadPlan)
+        // Speculative decoding: the chosen draft model joins only if it fits beside this one (never
+        // on a cluster, whose memory is already spoken for).
+        let draft = cluster == nil ? draftPlan(for: model, loadPlan: loadPlan) : nil
         if let draft {
             loadPlan.estimate.weights += draft.estimate.weights
             loadPlan.estimate.kvCache += draft.estimate.kvCache
@@ -211,24 +278,32 @@ final class InferenceEngine {
         if let draft, model.facts.recurrentStateBytes > 0 {
             configuration.rollbackDepth = draft.length + 1
         }
+        configuration.cluster = cluster?.placement
         loadingModelID = model.id
         loadProgress = 0
-        engineLog.info("Loading \(model.id, privacy: .public) ctx=\(loadPlan.contextLength) kv=\(loadPlan.kvType.rawValue, privacy: .public) est=\(loadPlan.estimate.total)")
+        engineLog.info("Loading \(model.id, privacy: .public) ctx=\(loadPlan.contextLength) kv=\(loadPlan.kvType.rawValue, privacy: .public) est=\(loadPlan.estimate.total) devices=\(cluster?.shares.count ?? 1)")
 
         let plannedLoad = loadPlan
+        let plannedCluster = cluster
         let loader = loadBackend
         let task = Task<LoadedModel, Error> { [weak self] in
             let backend = try await loader(model, fileURL, configuration) { value in
                 Task { @MainActor in self?.loadProgress = value }
             }
-            return LoadedModel(id: model.id, backend: backend, plan: plannedLoad, lastUsed: .now)
+            return LoadedModel(id: model.id, backend: backend, plan: plannedLoad, lastUsed: .now, cluster: plannedCluster)
         }
         loadTask = task
         defer {
             loadingModelID = nil
             loadTask = nil
         }
-        let entry = try await task.value
+        let entry: LoadedModel
+        do {
+            entry = try await task.value
+        } catch InferenceError.clusterDeviceLost(let name) {
+            onClusterDevicesLost?(RPCBridge.failedEndpoints())
+            throw InferenceError.clusterDeviceLost(name)
+        }
 
         // Measured safety net: if iOS reports too little headroom left, undo the load now
         // rather than risk the app being terminated during generation. A model loaded beyond the
@@ -301,6 +376,16 @@ final class InferenceEngine {
         if let reason { post("memorychip", reason) }
     }
 
+    /// A worker left the cluster. A model with layers on it can't run any more: its connection is
+    /// dropped (so a reply in progress fails at once instead of waiting out a timeout) and, when
+    /// idle, the model is released. The next reply plans again with the devices that are left.
+    func clusterWorkerLeft(endpoint: String) async {
+        for entry in loaded.values where entry.cluster?.workers.contains(where: { $0.device.endpoint == endpoint }) == true {
+            RPCBridge.disconnect(endpoint)
+            if live?.modelID != entry.id { await unload(entry.id) }
+        }
+    }
+
     // MARK: Generation
 
     /// Streams a reply from `model`. Loads it first when needed.
@@ -338,9 +423,13 @@ final class InferenceEngine {
                 } catch {
                     continuation.finish(throwing: error)
                     // A Metal command buffer that failed (iOS took the GPU away, for one) leaves
-                    // llama.cpp's GPU context failing every step until it's recreated: reload the
+                    // llama.cpp's GPU context failing every step until it's recreated, and a
+                    // cluster model whose worker dropped out has lost part of itself: reload the
                     // model for the next reply.
                     if let failure = error as? InferenceError, failure.needsReload {
+                        if case .clusterDeviceLost = failure {
+                            self?.onClusterDevicesLost?(RPCBridge.failedEndpoints())
+                        }
                         await self?.unload(model.id)
                     }
                 }

@@ -1,0 +1,481 @@
+OMNIA's changes to llama.cpp b11960 (commit 8642541) for cluster mode, applied by
+scripts/build-llama-xcframework.sh with `git apply`.
+
+build-xcframework.sh: builds the RPC backend (GGML_RPC, without RDMA) into the framework, so
+OMNIA can spread a model over other devices and serve its own device to a cluster.
+
+ggml-rpc: makes a lost worker an error instead of the end of the app. Upstream aborts the
+process when a connection fails and waits forever on one that goes silent; a phone on Wi-Fi
+does both when it locks or leaves. With this patch:
+  - connecting gives up after 5 s, and a send or receive with no progress for 60 s fails;
+  - sockets never raise SIGPIPE;
+  - a failed connection completes every later command at once with safe placeholder answers,
+    graph_compute returns GGML_STATUS_FAILED (so llama_decode reports it), and placeholder
+    answers are never cached;
+  - three functions, reached with ggml_backend_reg_get_proc_address on the "RPC" backend:
+      size_t ggml_backend_rpc_failed_endpoints(char * buffer, size_t size)
+      void   ggml_backend_rpc_clear_failures(void)
+      void   ggml_backend_rpc_disconnect(const char * endpoint)
+The wire protocol is unchanged (8.0.1), so official b11960 servers (ggml-rpc-server) work as workers.
+
+diff --git a/build-xcframework.sh b/build-xcframework.sh
+index e2a2684..e926059 100644
+--- a/build-xcframework.sh
++++ b/build-xcframework.sh
+@@ -85,6 +85,8 @@ COMMON_CMAKE_ARGS=(
+     -DGGML_METAL=${GGML_METAL}
+     -DGGML_NATIVE=OFF
+     -DGGML_OPENMP=${GGML_OPENMP}
++    -DGGML_RPC=ON
++    -DGGML_RPC_RDMA=OFF
+ )
+ 
+ check_required_tool() {
+@@ -297,6 +299,7 @@ combine_static_libraries() {
+         "${base_dir}/${build_dir}/ggml/src/${release_dir}/libggml-cpu.a"
+         "${base_dir}/${build_dir}/ggml/src/ggml-metal/${release_dir}/libggml-metal.a"
+         "${base_dir}/${build_dir}/ggml/src/ggml-blas/${release_dir}/libggml-blas.a"
++        "${base_dir}/${build_dir}/ggml/src/ggml-rpc/${release_dir}/libggml-rpc.a"
+         "${base_dir}/${build_dir}/tools/mtmd/${release_dir}/libmtmd.a"
+         "${base_dir}/${build_dir}/vendor/hash/${release_dir}/libvendor-hash.a"
+     )
+diff --git a/ggml/src/ggml-rpc/ggml-rpc.cpp b/ggml/src/ggml-rpc/ggml-rpc.cpp
+index 8cedee7..4314b47 100644
+--- a/ggml/src/ggml-rpc/ggml-rpc.cpp
++++ b/ggml/src/ggml-rpc/ggml-rpc.cpp
+@@ -30,6 +30,41 @@ namespace fs = std::filesystem;
+ // macro for nicer error messages on server crash
+ #define RPC_STATUS_ASSERT(x) if (!(x)) GGML_ABORT("Remote RPC server crashed or returned malformed response")
+ 
++// OMNIA: a server on Wi-Fi can vanish at any moment (a locked phone, a closed laptop). Instead of
++// aborting the process, a lost connection marks its endpoint failed, every later command on it
++// completes at once with harmless defaults, and the app asks ggml_backend_rpc_failed_endpoints()
++// after each step whether the work it just did can be trusted.
++static std::mutex               rpc_failed_mutex;
++static std::vector<std::string> rpc_failed_list;
++
++static void rpc_mark_failed(const std::string & endpoint) {
++    std::lock_guard<std::mutex> lock(rpc_failed_mutex);
++    if (std::find(rpc_failed_list.begin(), rpc_failed_list.end(), endpoint) == rpc_failed_list.end()) {
++        rpc_failed_list.push_back(endpoint);
++    }
++}
++
++// Writes the failed endpoints, comma-separated, into buffer (when given) and returns how many there are.
++static size_t ggml_backend_rpc_failed_endpoints(char * buffer, size_t size) {
++    std::lock_guard<std::mutex> lock(rpc_failed_mutex);
++    if (buffer != nullptr && size > 0) {
++        std::string joined;
++        for (const auto & endpoint : rpc_failed_list) {
++            if (!joined.empty()) {
++                joined += ",";
++            }
++            joined += endpoint;
++        }
++        snprintf(buffer, size, "%s", joined.c_str());
++    }
++    return rpc_failed_list.size();
++}
++
++static void ggml_backend_rpc_clear_failures(void) {
++    std::lock_guard<std::mutex> lock(rpc_failed_mutex);
++    rpc_failed_list.clear();
++}
++
+ // all RPC structures must be packed
+ #pragma pack(push, 1)
+ // ggml_tensor is serialized into rpc_tensor
+@@ -271,6 +306,32 @@ struct rpc_msg_comm_free_req {
+ 
+ #pragma pack(pop)
+ 
++// OMNIA: the answer a command gets once its connection is lost. Zeroes mean no buffer, no cache
++// hit, no device and no data; alignment, size limit and base address get values that keep ggml's
++// own checks from aborting while the caller unwinds.
++static void rpc_fill_failed_response(enum rpc_cmd cmd, void * output, size_t output_size) {
++    memset(output, 0, output_size);
++    switch (cmd) {
++        case RPC_CMD_GET_ALIGNMENT:
++            if (output_size == sizeof(rpc_msg_get_alignment_rsp)) {
++                ((rpc_msg_get_alignment_rsp *) output)->alignment = 128;
++            }
++            break;
++        case RPC_CMD_GET_MAX_SIZE:
++            if (output_size == sizeof(rpc_msg_get_max_size_rsp)) {
++                ((rpc_msg_get_max_size_rsp *) output)->max_size = UINT64_MAX;
++            }
++            break;
++        case RPC_CMD_BUFFER_GET_BASE:
++            if (output_size == sizeof(rpc_msg_buffer_get_base_rsp)) {
++                ((rpc_msg_buffer_get_base_rsp *) output)->base_ptr = 4096;
++            }
++            break;
++        default:
++            break;
++    }
++}
++
+ // RPC data structures
+ 
+ static ggml_guid_t ggml_backend_rpc_guid() {
+@@ -430,7 +491,9 @@ static bool negotiate_hello(const std::shared_ptr<socket_t> & sock) {
+     sock->get_caps(request.conn_caps);
+ 
+     bool status = send_rpc_cmd(sock, RPC_CMD_HELLO, &request, sizeof(request), &response, sizeof(response));
+-    RPC_STATUS_ASSERT(status);
++    if (!status) {
++        return false;
++    }
+ 
+     if (response.major != RPC_PROTO_MAJOR_VERSION || response.minor > RPC_PROTO_MINOR_VERSION) {
+         LOG_ERROR("RPC server version mismatch: %d.%d.%d\n",
+@@ -516,9 +579,16 @@ public:
+     void start(const std::string & endpoint);
+     void work();
+ 
++    // OMNIA: true once the connection is lost; every later command completes at once
++    bool failed() const { return connection_failed.load(); }
++    // OMNIA: drops the connection now, so whoever waits on a vanished server fails at once
++    void disconnect();
++
+     ~rpc_dispatcher();
+ 
+ private:
++    void fail(const char * reason);
++
+     struct rpc_msg {
+         rpc_cmd                       cmd;
+         std::shared_ptr<const void>   input;
+@@ -539,6 +609,8 @@ private:
+     socket_ptr       sock;
+     std::atomic_uint busy_spin_users = 0;
+     std::atomic_bool running;
++    std::atomic_bool connection_failed{false};
++    std::string      endpoint;
+     std::thread      thread;
+ };
+ 
+@@ -639,25 +711,42 @@ void rpc_dispatcher::busy_spin_release() {
+ }
+ 
+ void rpc_dispatcher::start(const std::string & endpoint) {
++    this->endpoint = endpoint;
+     std::string host;
+     int port;
+     if (!parse_endpoint(endpoint, host, port)) {
+-        GGML_ABORT("Failed to parse endpoint: %s\n", endpoint.c_str());
+-    }
+-    if (!rpc_transport_init()) {
+-        GGML_ABORT("RPC transport initialization failed\n");
++        fail("invalid endpoint");
++    } else if (!rpc_transport_init()) {
++        fail("transport initialization failed");
++    } else {
++        sock = socket_t::connect(host.c_str(), port);
++        if (sock == nullptr) {
++            fail("no connection");
++        } else if (!negotiate_hello(sock)) {
++            fail("handshake failed");
++        } else {
++            LOG_DBG("[%s] connected to %s\n", __func__, endpoint.c_str());
++        }
+     }
++    // a failed dispatcher still runs its thread, which completes every command at once
++    running = true;
++    thread = std::thread(rpc_dispatcher_trampoline, this);
++}
+ 
+-    sock = socket_t::connect(host.c_str(), port);
+-    if (sock == nullptr) {
+-        GGML_ABORT("Failed to connect to %s\n", endpoint.c_str());
++void rpc_dispatcher::fail(const char * reason) {
++    if (!connection_failed.exchange(true)) {
++        LOG_ERROR("RPC connection to %s lost (%s)\n", endpoint.c_str(), reason);
++        rpc_mark_failed(endpoint);
+     }
+-    if (!negotiate_hello(sock)) {
+-        GGML_ABORT("RPC handshake failed for %s\n", endpoint.c_str());
++    if (sock != nullptr) {
++        sock->shutdown();
++    }
++}
++
++void rpc_dispatcher::disconnect() {
++    if (sock != nullptr) {
++        sock->shutdown();
+     }
+-    LOG_DBG("[%s] connected to %s\n", __func__, endpoint.c_str());
+-    running = true;
+-    thread = std::thread(rpc_dispatcher_trampoline, this);
+ }
+ 
+ void rpc_dispatcher::work() {
+@@ -680,12 +769,19 @@ void rpc_dispatcher::work() {
+                      rpc_log_format_size(msg_ptr->input_size).c_str(), rpc_log_format_size(msg_ptr->output_size).c_str());
+             const bool trace = rpc_log_debug_level() >= 3;
+             const auto t0 = std::chrono::steady_clock::now();
+-            if (msg_ptr->output) {
+-                bool status = send_rpc_cmd(sock, msg_ptr->cmd, msg_ptr->input.get(), msg_ptr->input_size, msg_ptr->output, msg_ptr->output_size);
+-                RPC_STATUS_ASSERT(status);
+-            } else {
+-                bool status = send_rpc_cmd(sock, msg_ptr->cmd, msg_ptr->input.get(), msg_ptr->input_size);
+-                RPC_STATUS_ASSERT(status);
++            bool status = false;
++            if (!connection_failed) {
++                if (msg_ptr->output) {
++                    status = send_rpc_cmd(sock, msg_ptr->cmd, msg_ptr->input.get(), msg_ptr->input_size, msg_ptr->output, msg_ptr->output_size);
++                } else {
++                    status = send_rpc_cmd(sock, msg_ptr->cmd, msg_ptr->input.get(), msg_ptr->input_size);
++                }
++                if (!status) {
++                    fail(rpc_cmd_name(msg_ptr->cmd));
++                }
++            }
++            if (!status && msg_ptr->output) {
++                rpc_fill_failed_response(msg_ptr->cmd, msg_ptr->output, msg_ptr->output_size);
+             }
+             if (trace) {
+                 const std::chrono::duration<double, std::milli> elapsed = std::chrono::steady_clock::now() - t0;
+@@ -708,13 +804,15 @@ rpc_dispatcher::~rpc_dispatcher() {
+     }
+ }
+ 
++// file scope (OMNIA), so ggml_backend_rpc_disconnect can reach a live connection
++static std::mutex                                                    rpc_dispatchers_mutex;
++static std::unordered_map<std::string, std::weak_ptr<rpc_dispatcher>> rpc_dispatchers;
++
+ static std::shared_ptr<rpc_dispatcher> get_dispatcher(const std::string & endpoint) {
+-    static std::mutex mutex;
+-    std::lock_guard<std::mutex> lock(mutex);
+-    static std::unordered_map<std::string, std::weak_ptr<rpc_dispatcher>> dispatchers;
++    std::lock_guard<std::mutex> lock(rpc_dispatchers_mutex);
+ 
+-    auto it = dispatchers.find(endpoint);
+-    if (it != dispatchers.end()) {
++    auto it = rpc_dispatchers.find(endpoint);
++    if (it != rpc_dispatchers.end()) {
+         if (auto dispatcher = it->second.lock()) {
+             return dispatcher;
+         }
+@@ -722,10 +820,26 @@ static std::shared_ptr<rpc_dispatcher> get_dispatcher(const std::string & endpoi
+ 
+     auto dispatcher = std::make_shared<rpc_dispatcher>();
+     dispatcher->start(endpoint);
+-    dispatchers[endpoint] = dispatcher;
++    rpc_dispatchers[endpoint] = dispatcher;
+     return dispatcher;
+ }
+ 
++// OMNIA: drops the connection to endpoint, if there is one, so work waiting on it fails at once
++// (the app calls this when a worker tells it, or its heartbeats show, that it has gone).
++static void ggml_backend_rpc_disconnect(const char * endpoint) {
++    std::shared_ptr<rpc_dispatcher> dispatcher;
++    {
++        std::lock_guard<std::mutex> lock(rpc_dispatchers_mutex);
++        auto it = rpc_dispatchers.find(endpoint);
++        if (it != rpc_dispatchers.end()) {
++            dispatcher = it->second.lock();
++        }
++    }
++    if (dispatcher) {
++        dispatcher->disconnect();
++    }
++}
++
+ static void ggml_backend_rpc_buffer_free_buffer(ggml_backend_buffer_t buffer) {
+     ggml_backend_rpc_buffer_context * ctx = (ggml_backend_rpc_buffer_context *)buffer->context;
+     auto request = std::make_shared<rpc_msg_free_buffer_req>();
+@@ -1111,7 +1225,8 @@ static size_t ggml_backend_rpc_buffer_type_get_alloc_size(ggml_backend_buffer_ty
+         auto dispatcher = get_dispatcher(buft_ctx->endpoint);
+         dispatcher->send(RPC_CMD_GET_ALLOC_SIZE, request, sizeof(*request), &response, sizeof(response));
+ 
+-        {
++        // OMNIA: a lost connection's placeholder answer must not outlive it
++        if (!dispatcher->failed()) {
+             std::lock_guard<std::mutex> lock(cache_mutex);
+             cache[cache_hash] = response.alloc_size;
+         }
+@@ -1272,6 +1387,10 @@ void rpc_dispatcher::graph_compute(uint32_t device, const ggml_cgraph * cgraph)
+ 
+ static enum ggml_status ggml_backend_rpc_graph_compute(ggml_backend_t backend, ggml_cgraph * cgraph) {
+     ggml_backend_rpc_context * rpc_ctx = (ggml_backend_rpc_context *)backend->context;
++    // OMNIA: llama_decode reports the failure instead of computing on a vanished server
++    if (rpc_ctx->dispatcher->failed()) {
++        return GGML_STATUS_FAILED;
++    }
+     rpc_ctx->dispatcher->graph_compute(rpc_ctx->device, cgraph);
+     return GGML_STATUS_SUCCESS;
+ }
+@@ -1344,7 +1463,10 @@ ggml_backend_buffer_type_t ggml_backend_rpc_buffer_type(const char * endpoint, u
+         /* .device  = */ ggml_backend_reg_dev_get(reg, device),
+         /* .context = */ buft_ctx
+     };
+-    buft_map[buft_name] = buft;
++    // OMNIA: placeholder alignment and size from a lost connection must not be kept for its next one
++    if (!dispatcher->failed()) {
++        buft_map[buft_name] = buft;
++    }
+     LOG_DBG("[%s] created %s (alignment: %s, max_size: %s)\n", __func__, buft_name.c_str(),
+             rpc_log_format_size(alignment).c_str(), rpc_log_format_size(max_size).c_str());
+     return buft;
+@@ -3114,6 +3236,16 @@ static void * ggml_backend_rpc_get_proc_address(ggml_backend_reg_t reg, const ch
+     if (std::strcmp(name, "ggml_backend_comm_allreduce_tensor") == 0) {
+         return (void *)ggml_backend_rpc_comm_allreduce_tensor;
+     }
++    // OMNIA: connection health, for an app whose servers can drop out
++    if (std::strcmp(name, "ggml_backend_rpc_failed_endpoints") == 0) {
++        return (void *)ggml_backend_rpc_failed_endpoints;
++    }
++    if (std::strcmp(name, "ggml_backend_rpc_clear_failures") == 0) {
++        return (void *)ggml_backend_rpc_clear_failures;
++    }
++    if (std::strcmp(name, "ggml_backend_rpc_disconnect") == 0) {
++        return (void *)ggml_backend_rpc_disconnect;
++    }
+     return NULL;
+ 
+     GGML_UNUSED(reg);
+diff --git a/ggml/src/ggml-rpc/transport.cpp b/ggml/src/ggml-rpc/transport.cpp
+index d5670f3..d9073d0 100644
+--- a/ggml/src/ggml-rpc/transport.cpp
++++ b/ggml/src/ggml-rpc/transport.cpp
+@@ -16,12 +16,22 @@
+ #  include <netinet/tcp.h>
+ #  include <netdb.h>
+ #  include <unistd.h>
++#  include <fcntl.h>
++#  include <poll.h>
++#  include <sys/time.h>
++#  include <cerrno>
+ #endif
+ #include <cstdlib>
+ #include <cstring>
+ #include <mutex>
+ #include <optional>
+ 
++// OMNIA: servers on Wi-Fi can vanish without closing their connection (a phone that locks or walks
++// out of range). Connecting gives up after a few seconds, and a send or receive that makes no
++// progress for a minute fails instead of waiting forever; a slow but working server is unaffected.
++static constexpr int RPC_CONNECT_TIMEOUT_MS = 5000;
++static constexpr int RPC_IO_TIMEOUT_SECONDS = 60;
++
+ #ifdef GGML_RPC_RDMA
+ #  include <infiniband/verbs.h>
+ #  include <array>
+@@ -713,6 +723,58 @@ static bool set_reuse_addr(sockfd_t sockfd) {
+     return ret == 0;
+ }
+ 
++// OMNIA: writing to a connection the other side dropped returns an error instead of raising
++// SIGPIPE, whose default action ends the whole app.
++static void set_no_sigpipe(sockfd_t sockfd) {
++#ifdef SO_NOSIGPIPE
++    int flag = 1;
++    setsockopt(sockfd, SOL_SOCKET, SO_NOSIGPIPE, (char *)&flag, sizeof(int));
++#else
++    (void) sockfd;
++#endif
++}
++
++#ifndef _WIN32
++static void set_io_timeout(sockfd_t sockfd, int seconds) {
++    struct timeval timeout = {};
++    timeout.tv_sec = seconds;
++    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
++    setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
++}
++
++// connect() that gives up after timeout_ms instead of the system's minute or more
++static bool connect_with_timeout(sockfd_t sockfd, const struct sockaddr * addr, socklen_t addr_len, int timeout_ms) {
++    const int flags = fcntl(sockfd, F_GETFL, 0);
++    if (flags < 0 || fcntl(sockfd, F_SETFL, flags | O_NONBLOCK) < 0) {
++        return ::connect(sockfd, addr, addr_len) == 0;
++    }
++    int ret = ::connect(sockfd, addr, addr_len);
++    if (ret < 0 && errno == EINPROGRESS) {
++        struct pollfd pfd = {};
++        pfd.fd = sockfd;
++        pfd.events = POLLOUT;
++        ret = -1;
++        if (poll(&pfd, 1, timeout_ms) == 1) {
++            int error = 0;
++            socklen_t error_len = sizeof(error);
++            if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &error, &error_len) == 0 && error == 0) {
++                ret = 0;
++            }
++        }
++    }
++    fcntl(sockfd, F_SETFL, flags);
++    return ret == 0;
++}
++#endif
++
++void socket_t::shutdown() {
++#ifdef _WIN32
++    ::shutdown(pimpl->fd, SD_BOTH);
++#else
++    ::shutdown(pimpl->fd, SHUT_RDWR);
++#endif
++}
++
+ socket_ptr socket_t::accept() {
+     auto client_socket_fd = ::accept(pimpl->fd, NULL, NULL);
+     if (!is_valid_fd(client_socket_fd)) {
+@@ -722,6 +784,7 @@ socket_ptr socket_t::accept() {
+         LOG_ERROR("Failed to set TCP_NODELAY\n");
+         return nullptr;
+     }
++    set_no_sigpipe(client_socket_fd);
+     LOG_DBG("[%s] accepted client connection\n", __func__);
+     return socket_ptr(new socket_t(std::make_unique<impl>(client_socket_fd)));
+ }
+@@ -759,11 +822,14 @@ socket_ptr socket_t::connect(const char * host, int port) {
+     if (!is_valid_fd(sockfd)) {
+         return nullptr;
+     }
++    // OMNIA: owns sockfd from here on, so each failure below closes it
++    auto sock = socket_ptr(new socket_t(std::make_unique<impl>(sockfd)));
+     if (!set_no_delay(sockfd)) {
+         LOG_ERROR("Failed to set TCP_NODELAY\n");
+         return nullptr;
+     }
+-    struct sockaddr_in addr;
++    set_no_sigpipe(sockfd);
++    struct sockaddr_in addr = {};
+     addr.sin_family = AF_INET;
+     addr.sin_port = htons(port);
+     struct hostent * server = gethostbyname(host);
+@@ -772,11 +838,18 @@ socket_ptr socket_t::connect(const char * host, int port) {
+         return nullptr;
+     }
+     memcpy(&addr.sin_addr.s_addr, server->h_addr, server->h_length);
++#ifdef _WIN32
+     if (::connect(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+         return nullptr;
+     }
++#else
++    if (!connect_with_timeout(sockfd, (struct sockaddr *)&addr, sizeof(addr), RPC_CONNECT_TIMEOUT_MS)) {
++        return nullptr;
++    }
++    set_io_timeout(sockfd, RPC_IO_TIMEOUT_SECONDS);
++#endif
+     LOG_DBG("[%s] connected to %s:%d\n", __func__, host, port);
+-    return socket_ptr(new socket_t(std::make_unique<impl>(sockfd)));
++    return sock;
+ }
+ 
+ #ifdef _WIN32
+diff --git a/ggml/src/ggml-rpc/transport.h b/ggml/src/ggml-rpc/transport.h
+index 59b8845..f518767 100644
+--- a/ggml/src/ggml-rpc/transport.h
++++ b/ggml/src/ggml-rpc/transport.h
+@@ -22,6 +22,9 @@ struct socket_t {
+ 
+     socket_ptr accept();
+ 
++    // OMNIA: ends the connection from any thread; a send or recv blocked on it returns at once
++    void shutdown();
++
+     void get_caps(uint8_t * local_caps);
+     void update_caps(const uint8_t * remote_caps);
+     const char * transport_name() const;

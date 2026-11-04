@@ -190,6 +190,10 @@ final class AppSettings {
     var toolsEnabledByDefault: Bool { didSet { save(toolsEnabledByDefault, "toolsEnabledByDefault") } }
     /// How long reasoning models think before answering, where their template takes a level.
     var reasoningEffort: ReasoningEffort { didSet { save(reasoningEffort.rawValue, "reasoningEffort") } }
+    /// When a cluster this device hosts takes a model instead of this device alone.
+    var clusterUse: ClusterUse { didSet { save(clusterUse.rawValue, "clusterUse") } }
+    /// How a hosted cluster spreads a model over its devices.
+    var clusterSpread: ClusterSpread { didSet { save(clusterSpread.rawValue, "clusterSpread") } }
     /// New conversations let the model search the web and read pages (off unless chosen).
     var webAccessByDefault: Bool { didSet { save(webAccessByDefault, "webAccessByDefault") } }
 
@@ -245,6 +249,8 @@ final class AppSettings {
         conversationMemoryLimitGB = defaults.object(forKey: "conversationMemoryLimitGB") as? Double ?? 4
         toolsEnabledByDefault = defaults.object(forKey: "toolsEnabledByDefault") as? Bool ?? true
         reasoningEffort = ReasoningEffort(rawValue: defaults.string(forKey: "reasoningEffort") ?? "") ?? .medium
+        clusterUse = ClusterUse(rawValue: defaults.string(forKey: "clusterUse") ?? "") ?? .whenNeeded
+        clusterSpread = ClusterSpread(rawValue: defaults.string(forKey: "clusterSpread") ?? "") ?? .fastest
         webAccessByDefault = defaults.object(forKey: "webAccessByDefault") as? Bool ?? false
         readRepliesAloud = defaults.object(forKey: "readRepliesAloud") as? Bool ?? false
 

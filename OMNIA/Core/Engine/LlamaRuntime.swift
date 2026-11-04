@@ -34,6 +34,9 @@ final class LlamaRuntime: @unchecked Sendable {
     /// Recurrent and hybrid caches can't be trimmed back to a shared prefix, so a saved state
     /// would rarely be reusable; only attention-only models save conversation memory.
     private let canSaveState: Bool
+    /// Where the layers are when the model is spread over a cluster; every step then checks that
+    /// no worker dropped out.
+    private let cluster: ClusterPlacement?
     /// A small model proposing tokens for speculative decoding, when one is attached.
     private var draft: DraftModel?
     /// The model's image encoder file (mmproj), when image support is installed.
@@ -70,6 +73,12 @@ final class LlamaRuntime: @unchecked Sendable {
         mtmd_helper_log_set(LlamaRuntime.forwardLog, nil)
         llama_backend_init()
     }()
+
+    /// Initializes llama.cpp and routes its log, before anything else uses ggml (a cluster worker's
+    /// server can start before any model loads).
+    static func prepareBackend() {
+        _ = backendReady
+    }
 
     /// Where an image goes in a prompt for llama.cpp's multimodal tokenizer ("<__media__>").
     private static let mediaMarker = String(cString: mtmd_default_marker())
@@ -150,8 +159,15 @@ final class LlamaRuntime: @unchecked Sendable {
         }
         modelParams.progress_callback_user_data = Unmanaged.passUnretained(progressBox).toOpaque()
 
-        let loadedModel: OpaquePointer? = withExtendedLifetime(progressBox) {
-            llama_model_load_from_file(path, modelParams)
+        let loadedModel: OpaquePointer?
+        if let cluster = configuration.cluster {
+            loadedModel = try withExtendedLifetime(progressBox) {
+                try LlamaRuntime.loadOnCluster(path: path, cluster: cluster, configuration: configuration, params: modelParams)
+            }
+        } else {
+            loadedModel = withExtendedLifetime(progressBox) {
+                llama_model_load_from_file(path, modelParams)
+            }
         }
         guard let loadedModel else {
             throw InferenceError.loadFailed("llama.cpp could not read this file. Its architecture may be newer than OMNIA's engine (llama.cpp b11960), or the file is damaged.")
@@ -167,6 +183,9 @@ final class LlamaRuntime: @unchecked Sendable {
         }
         guard let createdContext else {
             llama_model_free(loadedModel)
+            if let cluster = configuration.cluster, let lost = RPCBridge.failedEndpoints().first {
+                throw InferenceError.clusterDeviceLost(cluster.name(of: lost))
+            }
             throw InferenceError.contextCreationFailed("Try a shorter context length or a smaller model.")
         }
         guard let loadedVocab = llama_model_get_vocab(loadedModel) else {
@@ -188,6 +207,13 @@ final class LlamaRuntime: @unchecked Sendable {
         _ = llama_decode(createdContext, newBatch)
         llama_synchronize(createdContext)
         llama_memory_clear(llama_get_memory(createdContext), true)
+        // A worker that dropped out while the model loaded, or failed its first token.
+        if let cluster = configuration.cluster, let lost = RPCBridge.failedEndpoints().first {
+            llama_batch_free(newBatch)
+            llama_free(createdContext)
+            llama_model_free(loadedModel)
+            throw InferenceError.clusterDeviceLost(cluster.name(of: lost))
+        }
 
         let footprintAfter = SystemMetrics.processFootprint() ?? footprintBefore
         let gpuAfter = SystemMetrics.gpuAllocatedBytes() ?? gpuBefore
@@ -212,7 +238,10 @@ final class LlamaRuntime: @unchecked Sendable {
         bosText = bos
         addsBOS = llama_vocab_get_add_bos(loadedVocab)
         nativeToolFormat = renderer == nil ? nil : ToolCallFormat.detect(template: template)
+        cluster = configuration.cluster
+        // A cluster's cache lives on its workers; saving it would pull all of it over the network.
         canSaveState = !llama_model_is_recurrent(loadedModel) && !llama_model_is_hybrid(loadedModel)
+            && configuration.cluster == nil
         info = LoadedModelInfo(
             modelID: modelID,
             displayName: displayName,
@@ -228,6 +257,59 @@ final class LlamaRuntime: @unchecked Sendable {
             supportsThinkingToggle: template?.contains("enable_thinking") ?? false
         )
         progress(1)
+    }
+
+    /// Loads a model spread over a cluster: each worker's device takes its layers in pipeline order,
+    /// then this device's GPU takes its own layers and the output layer (see `ClusterPlacement`).
+    private static func loadOnCluster(path: String, cluster: ClusterPlacement, configuration: RuntimeConfiguration,
+                                      params: llama_model_params) throws -> OpaquePointer? {
+        guard RPCBridge.isAvailable else {
+            throw InferenceError.loadFailed("This build of OMNIA was made without cluster support.")
+        }
+        RPCBridge.clearFailures()
+        var devices: [OpaquePointer?] = []
+        var shares: [Float] = []
+        for slice in cluster.workers where slice.layers > 0 {
+            let served = RPCBridge.devices(at: slice.endpoint)
+            guard slice.device < served.count else { throw InferenceError.clusterDeviceLost(slice.name) }
+            devices.append(served[slice.device])
+            shares.append(Float(slice.layers))
+        }
+
+        var params = params
+        params.split_mode = LLAMA_SPLIT_MODE_LAYER
+        #if targetEnvironment(simulator)
+        let hostGPU: OpaquePointer? = nil
+        #else
+        let hostGPU: OpaquePointer? = configuration.gpuOffload ? ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU) : nil
+        #endif
+        if let hostGPU {
+            devices.append(hostGPU)
+            shares.append(Float(cluster.hostLayers + 1))
+            params.n_gpu_layers = 999
+        } else {
+            // Without a GPU here (the Simulator), this device's layers stay on its CPU, which
+            // llama.cpp places first; the workers take the rest and the output layer.
+            params.n_gpu_layers = Int32(cluster.workers.reduce(0) { $0 + $1.layers } + 1)
+        }
+        // llama.cpp reads llama_max_devices() proportions, in the order of the device list.
+        var split = [Float](repeating: 0, count: max(Int(llama_max_devices()), shares.count))
+        for (index, share) in shares.enumerated() { split[index] = share }
+        devices.append(nil)
+        let model = devices.withUnsafeMutableBufferPointer { deviceList in
+            split.withUnsafeBufferPointer { splitList in
+                params.devices = deviceList.baseAddress
+                params.tensor_split = splitList.baseAddress
+                return llama_model_load_from_file(path, params)
+            }
+        }
+        // llama.cpp remembers a worker's devices, so one that vanished since it last loaded only
+        // fails when its memory is allocated; that isn't the file's fault.
+        if let lost = RPCBridge.failedEndpoints().first {
+            if let model { llama_model_free(model) }
+            throw InferenceError.clusterDeviceLost(cluster.name(of: lost))
+        }
+        return model
     }
 
     private static func makeContext(model: OpaquePointer, configuration: RuntimeConfiguration) -> OpaquePointer? {
@@ -246,10 +328,11 @@ final class LlamaRuntime: @unchecked Sendable {
         }
         params.type_k = configuration.kvCacheType.ggmlType
         params.type_v = configuration.kvCacheType.ggmlType
+        // On a cluster each layer's cache stays with the layer, on its worker.
         #if targetEnvironment(simulator)
-        params.offload_kqv = false
+        params.offload_kqv = configuration.cluster != nil
         #else
-        params.offload_kqv = configuration.gpuOffload
+        params.offload_kqv = configuration.gpuOffload || configuration.cluster != nil
         #endif
         // Sliding-window layers keep only their window: far less memory for Gemma-style models.
         params.swa_full = false
@@ -538,6 +621,19 @@ final class LlamaRuntime: @unchecked Sendable {
         cachedMedia = [:]
     }
 
+    /// `llama_decode`, then the cluster's health: llama.cpp's network calls run ahead of it, so a
+    /// worker that dropped out can leave a step that returned 0 with garbage in it. The model is
+    /// unusable then (the engine reloads it), so this throws instead of returning a status.
+    private func decode(_ batch: llama_batch) throws -> Int32 {
+        let status = llama_decode(context, batch)
+        if let cluster, let lost = RPCBridge.failedEndpoints().first {
+            cachedTokens = []
+            cachedMedia = [:]
+            throw InferenceError.clusterDeviceLost(cluster.name(of: lost))
+        }
+        return status
+    }
+
     // MARK: Tokens
 
     func countTokens(_ text: String) async -> Int {
@@ -795,7 +891,7 @@ final class LlamaRuntime: @unchecked Sendable {
                     LlamaRuntime.add(&batch, token: prompt[cell], position: position + (cell - index),
                                      logits: cell == prompt.count - 1)
                 }
-                let status = llama_decode(context, batch)
+                let status = try decode(batch)
                 if status != 0 {
                     clearMemory()
                     if currentInterrupt == .background { throw InferenceError.backgroundExecution }
@@ -932,7 +1028,7 @@ final class LlamaRuntime: @unchecked Sendable {
             }
             batch.n_tokens = 0
             LlamaRuntime.add(&batch, token: token, position: position, logits: true)
-            let status = llama_decode(context, batch)
+            let status = try decode(batch)
             if status == 1 {
                 // No free cache slot (a sliding-window cache can fill early); the cache is unchanged.
                 output.stop = .contextFull
@@ -991,7 +1087,7 @@ final class LlamaRuntime: @unchecked Sendable {
             for (offset, token) in proposal.enumerated() {
                 LlamaRuntime.add(&batch, token: token, position: position + 1 + offset, logits: true)
             }
-            let status = llama_decode(context, batch)
+            let status = try decode(batch)
             if status == 1 {
                 output.stop = .contextFull
                 return
@@ -1059,7 +1155,7 @@ final class LlamaRuntime: @unchecked Sendable {
             for position in index..<end {
                 LlamaRuntime.add(&batch, token: tokens[position], position: position, logits: position == tokens.count - 1)
             }
-            let status = llama_decode(context, batch)
+            let status = try decode(batch)
             guard status == 0 else {
                 clearMemory()
                 throw InferenceError.decodeFailed(status)
@@ -1303,7 +1399,7 @@ final class LlamaRuntime: @unchecked Sendable {
                 LlamaRuntime.add(&batch, token: token, position: index, logits: index == promptTokens.count - 1)
             }
             let promptStart = ContinuousClock.now
-            let status = llama_decode(context, batch)
+            let status = try decode(batch)
             guard status == 0 else { throw InferenceError.decodeFailed(status) }
             llama_synchronize(context)
             let promptSeconds = max(promptStart.secondsElapsed, 1e-6)
@@ -1317,7 +1413,7 @@ final class LlamaRuntime: @unchecked Sendable {
                 if llama_vocab_is_eog(vocab, token) { token = promptTokens[step % promptTokens.count] }
                 batch.n_tokens = 0
                 LlamaRuntime.add(&batch, token: token, position: position, logits: true)
-                let decodeStatus = llama_decode(context, batch)
+                let decodeStatus = try decode(batch)
                 guard decodeStatus == 0 else { throw InferenceError.decodeFailed(decodeStatus) }
                 llama_synchronize(context)
                 position += 1

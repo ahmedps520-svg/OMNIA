@@ -6,11 +6,15 @@ struct RootView: View {
     @Environment(InferenceEngine.self) private var engine
     @Environment(ModelImporter.self) private var importer
     @Environment(AppNavigator.self) private var navigator
+    @Environment(ClusterHost.self) private var clusterHost
+    @Environment(ClusterWorker.self) private var clusterWorker
 
     @State private var selection: SidebarSelection?
     @State private var columnVisibility: NavigationSplitViewVisibility
     @State private var showOnboarding = false
     @State private var continueOnUnsupported = false
+    /// On a device OMNIA isn't tuned for, it can still lend its GPU to a cluster.
+    @State private var lendingOnly = false
     /// Bumped by ⌘F to put the cursor in the sidebar's search field.
     @State private var searchRequest = 0
 
@@ -26,10 +30,22 @@ struct RootView: View {
         Group {
             if device.isSupported || continueOnUnsupported {
                 mainInterface
+            } else if lendingOnly || clusterWorker.isActive || clusterWorker.proposedInvitation != nil {
+                NavigationStack {
+                    ClusterView(lendingOnly: true)
+                        .toolbar {
+                            if !clusterWorker.isActive {
+                                ToolbarItem(placement: .topBarLeading) {
+                                    Button("Back") { lendingOnly = false }
+                                }
+                            }
+                        }
+                }
             } else {
-                UnsupportedDeviceView(device: device) { continueOnUnsupported = true }
+                UnsupportedDeviceView(device: device, onLend: { lendingOnly = true }) { continueOnUnsupported = true }
             }
         }
+        .clusterPrompts(navigate: { selection = .section(.cluster) })
         .preferredColorScheme(settings.appearance.colorScheme)
         .tint(Theme.accent(settings.accent))
         .onAppear {
@@ -83,7 +99,11 @@ struct RootView: View {
         .omniaAnimation(settings.animations, value: engine.notice)
         .onChange(of: navigator.request, initial: true) { _, request in
             guard let request else { return }
-            selection = .conversation(request.conversation)
+            if let conversation = request.conversation {
+                selection = .conversation(conversation)
+            } else if let section = request.section {
+                selection = .section(section)
+            }
             navigator.handled(request)
         }
         .focusedSceneValue(\.windowCommands, WindowCommands(
@@ -118,6 +138,8 @@ struct DetailRouter: View {
             ChatView(conversationID: id, selection: $selection)
         case .section(.models):
             ModelsView(selection: $selection)
+        case .section(.cluster):
+            ClusterView()
         case .section(.compare):
             CompareView()
         case .section(.library):

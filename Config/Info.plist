@@ -13,6 +13,35 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>OMNIA recognizes your dictation on this device. Nothing you say leaves it.</string>
 
+	<!-- Cluster mode: your devices run one model together over the local network. The host
+	     advertises itself over Bonjour and serves join requests over plain HTTP on the LAN;
+	     workers relay llama.cpp's RPC protocol. Nothing leaves the network. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>OMNIA connects to your own iPhones, iPads and PCs on this network so they can run a model together in a cluster. Nothing leaves your network.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_omnia-cluster._tcp</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>OMNIA scans a cluster's QR code so this device can join it. The camera image isn't stored.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<!-- omnia://cluster?… links, which a host's QR code carries, open OMNIA to join it. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).cluster</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>omnia</string>
+			</array>
+		</dict>
+	</array>
+
 	<!-- Model downloads show on the Lock Screen and in the Dynamic Island (OMNIAWidgets). -->
 	<key>NSSupportsLiveActivities</key>
 	<true/>

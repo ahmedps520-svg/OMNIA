@@ -27,9 +27,16 @@ struct OMNIAApp: App {
                 .environment(services.python)
                 .environment(services.speech)
                 .environment(services.dictation)
+                .environment(services.clusterHost)
+                .environment(services.clusterWorker)
                 .environment(services.navigator)
                 .modelContainer(services.container)
                 .onOpenURL { url in
+                    // A cluster's QR code, scanned with the Camera: asks before lending this device.
+                    if let invitation = ClusterInvitation(url: url) {
+                        services.clusterWorker.proposedInvitation = invitation
+                        return
+                    }
                     guard url.isFileURL else { return }
                     Task { await services.importer.importFile(at: url) }
                 }
@@ -45,9 +52,12 @@ struct OMNIAApp: App {
                 services.engine.sceneDidEnterBackground(keepGenerating: services.chat.holdsBackgroundGPU)
                 // Reading aloud goes on with the screen locked; listening doesn't.
                 Task { await services.dictation.stop() }
+                services.clusterWorker.sceneDidEnterBackground()
             case .active:
                 services.engine.sceneWillEnterForeground()
                 services.store.refreshSystemModels()
+                services.clusterWorker.sceneDidBecomeActive()
+                services.clusterHost.sceneDidBecomeActive()
             default: break
             }
         }

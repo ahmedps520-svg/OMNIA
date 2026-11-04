@@ -110,13 +110,19 @@ scripts/          Archive, icon rendering, catalog regeneration
 
 **Voice.** The composer's microphone dictates with iOS 26's SpeechAnalyzer, entirely on device: SpeechTranscriber where the hardware supports it, DictationTranscriber otherwise, with the words appearing as they're recognized and the audio never stored. iOS downloads the speech model the first time a language is used. Replies can be read aloud, by tap or automatically, in the best installed voice for the reply's language (or the Spoken Content voice set in Accessibility); headings and lists get pauses, links are read by their text, web addresses by their site, and code blocks and equations are skipped. Reading continues with the screen locked.
 
-**iPad.** A reply keeps generating when you switch apps (Settings › Memory & Performance). Every command is in the menu bar with a shortcut: ⌘N new chat, ⌥⌘N new window, ⌘K switch model, ⌘. stop, ⌘F search conversations, ⌘1–⌘6 sections, ⌘, settings. Any conversation opens in its own window from its context menu. Performance exports a device report (JSON): measured memory limit, model loads, benchmarks and median speeds, with no conversation content.
+**iPad.** A reply keeps generating when you switch apps (Settings › Memory & Performance). Every command is in the menu bar with a shortcut: ⌘N new chat, ⌥⌘N new window, ⌘K switch model, ⌘. stop, ⌘F search conversations, ⌘1–⌘7 sections, ⌘, settings. Any conversation opens in its own window from its context menu. Performance exports a device report (JSON): measured memory limit, model loads, benchmarks and median speeds, with no conversation content.
 
 **Shortcuts and Lock Screen.** "Ask OMNIA" and "Summarize with OMNIA" (text, or a PDF, text or code file) work in Siri, Shortcuts and Spotlight and open the new chat. Model downloads show on the Lock Screen and in the Dynamic Island through a small WidgetKit extension.
 
 **Chat templates.** Newer models (Gemma 4, the Qwen3.5 family, gpt-oss, Granite 4.2, LFM3) need their exact Jinja templates. OMNIA renders the template stored in the GGUF with swift-jinja, as `llama-server --jinja` does, falling back to llama.cpp's built-in templates and then ChatML. Reasoning switches (`enable_thinking`, `reasoning_effort`, `reasoning_strength`) are exposed per conversation and per model, and reasoning is shown in a collapsible section for `<think>`, Gemma 4 thought channels, gpt-oss Harmony channels and Muse Glimmer messages.
 
 **Reasoning effort and reply length.** Settings › Inference sets how long reasoning models think: Light, Balanced (the default) or Thorough. Every template that takes a level gets it, so Qwen3.8 doesn't fall back to its own default, "xhigh", which second-guesses settled points at length. Replies may run to 8,192 tokens, room to reason and then answer; the 2,048-token limit saved by builds 01–04 is raised once on update, and a limit chosen after that stays.
+
+**Cluster.** A model too big for one device runs across several on the same Wi-Fi: up to 20 can join, and one model spreads over up to 16 of them (llama.cpp's limit). The device you chat on hosts (Cluster in the sidebar). Other iPhones and iPads join by scanning its QR code, with the Camera or in OMNIA. Devices OMNIA isn't tuned for, such as an iPhone 12 Pro Max or an iPad Air, open straight to lending. A Windows PC joins from a page the host serves: one PowerShell command starts OMNIA Node (`OMNIA/Resources/Cluster/omnia-node.ps1`). It downloads llama.cpp b11960's official `ggml-rpc-server` (CUDA for NVIDIA, Vulkan or CPU otherwise), verifies its SHA-256, and puts an access-controlled relay in front of it. Each new PC needs one tap of approval on the host. How it runs:
+- **Engine.** It is llama.cpp's RPC backend, built into OMNIA's own build of llama.cpp (`scripts/build-llama-xcframework.sh`). Each device holds whole layers and its share of the KV cache. The host keeps the embeddings and the output layer, so the vocabulary-sized logits never cross the network.
+- **Planning.** `ClusterPlanner` weighs each device's memory, its memory bandwidth (reported by Apple devices, looked up from the card's name for PCs) and its network round trip. It fills the fastest devices first and adds a device only when its memory is needed, since each one costs every token about a round trip and a half. **Every Device** spreads by memory instead.
+- **When it's used.** Chats load a model on the cluster when it doesn't fit on the host alone, or, if chosen, whenever the cluster is clearly faster.
+- **Lending.** Workers keep the screen on, and pause when OMNIA leaves the screen, since iOS gives apps no GPU in the background. When a worker drops out, the reply ends with an error naming it; the model reloads on the devices that are left. OMNIA's patch to llama.cpp (`scripts/llama/cluster.patch`) makes a lost connection fail the request instead of aborting the app, and time out instead of hanging. Weights a worker received are cached on it, so loading the same model again is fast.
 
 **Default system prompt.** A conversation with no system prompt of its own (from the chat, a persona or the model's settings) gets OMNIA's: the device and date, to commit to an answer rather than second-guess it, to write each file in full in one tagged code block for the workspace (Swift as complete files for Xcode or Swift Playgrounds, since it can't run here), and the names of the tools the model can call.
 
@@ -143,7 +149,7 @@ After loading, OMNIA re-measures. If iOS reports too little headroom left, it un
 
 ## Model catalog
 
-`OMNIA/Core/Models/CatalogData.swift` lists 19 models (90 GGUF files) verified on 2026-11-02:
+`OMNIA/Core/Models/CatalogData.swift` lists 19 models (94 GGUF files) verified on 2026-11-02, plus Qwen3.8 27B's four larger files for clusters (UD-Q4_K_M to Q8_0) on 2026-11-05:
 
 - Every repository is public (`gated: false`).
 - Sizes and SHA-256 hashes come from the Hugging Face API, and every file answered a `HEAD` request without login.
@@ -164,7 +170,7 @@ Downloads use a background `URLSession` and can be paused, resumed (across relau
 
 ## Privacy
 
-- Inference never uses the network. Conversations, documents and settings stay in the app's sandbox (SwiftData, no CloudKit).
+- Inference never uses the network, unless you host a cluster. A cluster's model weights and activations then pass over your local network between your own devices, unencrypted. Nothing leaves the network, and no other device can join without the code on your screen or your approval. Conversations, documents and settings stay in the app's sandbox (SwiftData, no CloudKit).
 - Dictation is recognized on device, and the microphone audio is neither stored nor sent anywhere.
 - The only network traffic is model search and downloads from Hugging Face, which you initiate. **Offline-only mode** blocks even that.
 - No accounts, no API keys, no analytics, no telemetry. `PrivacyInfo.xcprivacy` declares no data collection.
@@ -178,10 +184,19 @@ Downloads use a background `URLSession` and can be paused, resumed (across relau
 - **Memory limits** for the M5 iPad Pro and iPhone 18 Pro with the increased-limit entitlement aren't published. OMNIA measures them at runtime; measure on a TestFlight build, since debug builds can differ.
 - **GPU utilization and temperatures** aren't available through public iOS APIs; the Performance center says so instead of estimating.
 - **Images, not audio or video.** Some image encoders (Gemma 4 E2B/E4B, Nemotron Bolt) also contain audio towers; OMNIA uses their vision part only.
+- **Clusters trade speed for size.** Each token crosses the network once for each device holding layers. Wired PCs and a fast Wi-Fi router help; a crowded network slows every reply.
+- **Weight transfer.** Loading sends each device its layers from the host, about a minute per 5 GB on good Wi-Fi; a reload reads them from the device's cache instead.
+- **Supported models and PCs.** Clusters run GGUF models on llama.cpp only; MLX models stay on one device. OMNIA Node runs on Windows 10 and 11.
+- **Same build everywhere.** llama.cpp's RPC protocol changes between builds, so every device must run the same one. The host refuses a mismatched device with an explanation.
 
 ## Maintenance
 
-**Updating llama.cpp.** Pick a build from [llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases). In `Packages/LlamaFramework/Package.swift`, replace `releaseURL` and `releaseChecksum`, the SHA-256 shown next to the `llama-bXXXXX-xcframework.zip` asset. Delete any local `Packages/LlamaFramework/llama.xcframework` and rerun `scripts/build-llama-xcframework.sh`; CI rebuilds its cached copy automatically. Diff `include/llama.h` against b11960 and adjust `Core/Engine/LlamaRuntime.swift` if the C API changed.
+**Updating llama.cpp.** Pick a build from [llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases). Then:
+1. In `Packages/LlamaFramework/Package.swift`, replace `releaseURL`, `releaseChecksum` and `releaseCommit`. The checksum is the SHA-256 shown next to the `llama-bXXXXX-xcframework.zip` asset; the commit is the one the tag points to.
+2. Check that `scripts/llama/cluster.patch` still applies to that build, and update it if not.
+3. In `ClusterProtocol` and `omnia-node.ps1`, update the build name, and in `omnia-node.ps1` the Windows assets and their SHA-256.
+4. Delete any local `Packages/LlamaFramework/llama.xcframework` and rerun `scripts/build-llama-xcframework.sh`; CI rebuilds its cached copy automatically.
+5. Diff `include/llama.h` against b11960 and adjust `Core/Engine/LlamaRuntime.swift` if the C API changed.
 
 **Refreshing the catalog.** `scripts/catalog/models.json` holds the verified file list. Then run:
 ```

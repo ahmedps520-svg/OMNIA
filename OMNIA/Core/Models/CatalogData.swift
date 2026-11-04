@@ -26,7 +26,11 @@ extension ModelCatalog {
                 CatalogVariant(quant: "UD-IQ2_XXS", fileName: "Qwen3.8-27B-UD-IQ2_XXS.gguf", sizeBytes: 7_266_070_528, sha256: "e792d8fb3142fe6d9171876d6da0f71f05a71028718debc72dbec93ff645e67d"),
                 CatalogVariant(quant: "UD-Q2_K_XL", fileName: "Qwen3.8-27B-UD-Q2_K_XL.gguf", sizeBytes: 9_828_981_664, sha256: "fd4730dd8aad070517978752b63d530aeb1740d2283cab9fa24f1e404032ddb0"),
                 CatalogVariant(quant: "UD-IQ3_XXS", fileName: "Qwen3.8-27B-UD-IQ3_XXS.gguf", sizeBytes: 10_934_860_704, sha256: "c0b7c3038681ed2e3040456c1dd45f9858b6c2290bed172c70388a94874f3eee"),
-                CatalogVariant(quant: "UD-Q3_K_XL", fileName: "Qwen3.8-27B-UD-Q3_K_XL.gguf", sizeBytes: 13_146_393_504, sha256: "8c2a45ff85e7674ca185ec8eb6cdeab0e617ed9d8018caed0b64380eb2a67a5e")
+                CatalogVariant(quant: "UD-Q3_K_XL", fileName: "Qwen3.8-27B-UD-Q3_K_XL.gguf", sizeBytes: 13_146_393_504, sha256: "8c2a45ff85e7674ca185ec8eb6cdeab0e617ed9d8018caed0b64380eb2a67a5e"),
+                CatalogVariant(quant: "UD-Q4_K_M", fileName: "Qwen3.8-27B-UD-Q4_K_M.gguf", sizeBytes: 16_464_440_224, sha256: "322e194ff79741c7baa497c240f677f54b201b0efab44ca8e50f122b39123482"),
+                CatalogVariant(quant: "UD-Q5_K_M", fileName: "Qwen3.8-27B-UD-Q5_K_M.gguf", sizeBytes: 19_771_509_664, sha256: "2de73110cb254cbf09b54b717578dadff12ef1194e7271527e68202f39ba4bfd"),
+                CatalogVariant(quant: "UD-Q6_K", fileName: "Qwen3.8-27B-UD-Q6_K.gguf", sizeBytes: 21_983_677_344, sha256: "c9c206812fbe4ac7b76a729e25928b63f2ae89d37f69da7a71c20aec763cd436"),
+                CatalogVariant(quant: "Q8_0", fileName: "Qwen3.8-27B-Q8_0.gguf", sizeBytes: 29_047_086_048, sha256: "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348")
             ],
             projector: CatalogProjector(repo: "ggml-org/Qwen3.8-27B-GGUF", fileName: "mmproj-Qwen3.8-27B-Q8_0.gguf",
                                         sizeBytes: 629_247_008, sha256: "2e968a6af97ce35d8971890b257b9b7edabf20ad91450501fa53162a19ee33eb")

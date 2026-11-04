@@ -11,8 +11,9 @@ on:
 jobs:
   build:
     runs-on: macos-26
-    # MLX (C++ and Metal shaders) compiles twice: for devices and for the simulator.
-    timeout-minutes: 90
+    # MLX (C++ and Metal shaders) compiles twice: for devices and for the simulator, and llama.cpp
+    # too when its cached build is out of date.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -21,16 +22,17 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      # The llama.cpp release has no iOS Simulator slice, so the tests use a copy with one built
-      # from the same tag (scripts/build-llama-xcframework.sh). It's cached per pinned release.
-      - name: Restore llama.cpp framework with simulator slice
+      # OMNIA's llama.cpp build: the pinned tag with the RPC backend for cluster mode, for devices
+      # and the simulator (scripts/build-llama-xcframework.sh). Cached per pin and patch; the
+      # TestFlight workflow restores the same cache.
+      - name: Restore llama.cpp framework
         id: llama
         uses: actions/cache@v4
         with:
           path: Packages/LlamaFramework/llama.xcframework
-          key: llama-xcframework-${{ hashFiles('Packages/LlamaFramework/Package.swift', 'scripts/build-llama-xcframework.sh') }}
+          key: llama-xcframework-${{ hashFiles('Packages/LlamaFramework/Package.swift', 'scripts/build-llama-xcframework.sh', 'scripts/llama/cluster.patch') }}
 
-      - name: Build llama.cpp simulator slice
+      - name: Build llama.cpp framework
         if: steps.llama.outputs.cache-hit != 'true'
         run: scripts/build-llama-xcframework.sh
 
@@ -79,6 +81,19 @@ jobs:
         run: |
           # xcodebuild passes TEST_RUNNER_-prefixed variables to the tests without the prefix.
           export TEST_RUNNER_OMNIA_TEST_MODELS="$HOME/omnia-test-models"
+          # An official llama.cpp b11960 RPC server, the program a PC in a cluster runs, so the
+          # cluster tests also check OMNIA against a server it didn't build.
+          SERVER_ARCHIVE="$RUNNER_TEMP/llama-macos.tar.gz"
+          curl -fsSL -o "$SERVER_ARCHIVE" https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-macos-arm64.tar.gz
+          echo "58e5a5e1d7c2bf66cedd9c29e0323f3e570660a70a1e2156d32eed08f4cc1e3c  $SERVER_ARCHIVE" | shasum -a 256 -c -
+          mkdir -p "$RUNNER_TEMP/llama-macos" && tar -xzf "$SERVER_ARCHIVE" -C "$RUNNER_TEMP/llama-macos"
+          SERVER=$(find "$RUNNER_TEMP/llama-macos" -name ggml-rpc-server -type f | head -n 1)
+          if [ -n "$SERVER" ]; then
+            "$SERVER" -H 127.0.0.1 -p 50199 -d CPU > "$RUNNER_TEMP/rpc-server.log" 2>&1 &
+            export TEST_RUNNER_OMNIA_TEST_RPC_SERVER="127.0.0.1:50199"
+          else
+            echo "::warning title=Cluster::No ggml-rpc-server in the macOS release; the official-server test is skipped."
+          fi
           SIMULATOR=$(xcrun simctl list devices available -j | python3 -c '
           import json, sys
           devices = json.load(sys.stdin)["devices"]

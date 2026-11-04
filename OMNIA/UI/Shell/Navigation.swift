@@ -1,7 +1,7 @@
 import Foundation
 
 enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
-    case home, chat, models, compare, library, performance, settings
+    case home, chat, models, cluster, compare, library, performance, settings
 
     var id: String { rawValue }
 
@@ -10,6 +10,7 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
         case .home: "Home"
         case .chat: "Chat"
         case .models: "Models"
+        case .cluster: "Cluster"
         case .compare: "Compare"
         case .library: "Library"
         case .performance: "Performance"
@@ -22,6 +23,7 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
         case .home: "circle.hexagongrid"
         case .chat: "bubble.left.and.text.bubble.right"
         case .models: "cube.transparent"
+        case .cluster: "point.3.connected.trianglepath.dotted"
         case .compare: "rectangle.split.2x1"
         case .library: "books.vertical"
         case .performance: "gauge.with.dots.needle.67percent"

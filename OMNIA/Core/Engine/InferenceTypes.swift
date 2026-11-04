@@ -58,6 +58,8 @@ struct RuntimeConfiguration: Hashable, Codable, Sendable {
     /// Recurrent-state snapshots kept so speculative decoding can undo rejected tokens on hybrid
     /// models (llama.cpp `n_rs_seq`); 0 when not needed.
     var rollbackDepth: Int = 0
+    /// Spreads the model over a cluster's devices instead of this one alone.
+    var cluster: ClusterPlacement? = nil
 }
 
 struct SamplingParameters: Hashable, Codable, Sendable {
@@ -258,9 +260,13 @@ enum InferenceError: LocalizedError {
     case imageEncoderFailed
     case imageUnreadable
     case imageFailed(String)
+    /// A device holding part of a cluster model stopped answering.
+    case clusterDeviceLost(String)
 
     var errorDescription: String? {
         switch self {
+        case .clusterDeviceLost(let name):
+            "Lost the connection to \(name), which holds part of the model. Keep OMNIA open with the screen on for every iPhone and iPad in the cluster, and the OMNIA Node window open on PCs. The model reloads on the devices that are left for your next message; tap Continue to try again."
         case .modelFileMissing(let name):
             "The model file for \(name) is missing. Re-download or re-import it."
         case .invalidModelFile(let reason):
@@ -313,7 +319,7 @@ extension InferenceError {
     /// loaded again before its next reply.
     var needsReload: Bool {
         switch self {
-        case .decodeFailed, .engineFailed: true
+        case .decodeFailed, .engineFailed, .clusterDeviceLost: true
         default: false
         }
     }

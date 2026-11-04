@@ -20,7 +20,8 @@ on:
 jobs:
   upload:
     runs-on: macos-26
-    timeout-minutes: 60
+    # Room to build llama.cpp too when the Build workflow's cached copy is missing.
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v4
 
@@ -50,6 +51,19 @@ jobs:
           # Unique, increasing build numbers without a local Mac: the workflow run number.
           xcrun agvtool new-version -all "${{ github.run_number }}" || \
             sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = ${{ github.run_number }};/g" OMNIA.xcodeproj/project.pbxproj
+
+      # OMNIA's llama.cpp build with the RPC backend for cluster mode (see build.yml); without
+      # it the archive would fall back to the official release, which has no cluster mode.
+      - name: Restore llama.cpp framework
+        id: llama
+        uses: actions/cache@v4
+        with:
+          path: Packages/LlamaFramework/llama.xcframework
+          key: llama-xcframework-${{ hashFiles('Packages/LlamaFramework/Package.swift', 'scripts/build-llama-xcframework.sh', 'scripts/llama/cluster.patch') }}
+
+      - name: Build llama.cpp framework
+        if: steps.llama.outputs.cache-hit != 'true'
+        run: scripts/build-llama-xcframework.sh
 
       # MLX compiles Metal shaders (see build.yml).
       - name: Metal toolchain

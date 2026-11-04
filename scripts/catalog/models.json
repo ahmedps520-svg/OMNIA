@@ -9,7 +9,7 @@
     "params_active_b": 27.8,
     "context": 262144,
     "license": "apache-2.0",
-    "notes": "Released Aug 5 2026. Dense hybrid (Gated DeltaNet + gated attention) LM with vision encoder; 27.8B incl. vision tower (27B LM); text-only use fine, mmproj optional. Highest-quality model in this catalog: Qwen card GPQA-Diamond 89.2, IFBench 79.5, SWE-bench Pro 61.7; Artificial Analysis Intelligence Index v5.0 small-class (4-40B) co-leader (20 at xhigh effort, tied with Nanbeige4.3-33B; 17 medium, 16 low, 10 non-reasoning). THINKING model: <think>...</think> on by default; chat-template kwargs enable_thinking=false (direct answers), reasoning_effort xhigh(default)/medium/low, preserve_thinking (default true) - use the GGUF's embedded Jinja template (llama.cpp --jinja). llama.cpp arch qwen35, supported since b7990 (Feb 10 2026, PR #19468). Unsloth dynamic (UD) quants chosen because they are much smaller than standard imatrix quants at equal bit-width (UD-IQ3_XXS 10.93GB vs bartowski IQ3_XXS 12.32GB); caveats: unsloth's embedded chat template is modified vs Qwen's original and these files contain no MTP layers. Alternative: bartowski/Qwen3.8-27B-GGUF (original template, built-in MTP layers for --spec-type draft-mtp; IQ2_M 10.52GB, IQ3_XXS 12.32GB, Q3_K_M 13.40GB). Device fit: 16GB iPad for UD-Q2_K_XL/UD-IQ3_XXS; UD-IQ2_XXS is the only realistic 12GB-device option (expect clear 2-bit quality loss). Dense 27B => slowest decode in the catalog. Requested quant types not published in this repo: IQ3_M, Q3_K_M, Q3_K_L, IQ2_M. Omitted as >13.5GB: UD-Q4_K_M 16.46GB, UD-Q5_K_M 19.77GB, UD-Q6_K 21.98GB, Q8_0 29.05GB, UD-IQ4_XS 14.25GB, Q4_0 16.06GB.",
+    "notes": "Released Aug 5 2026. Dense hybrid (Gated DeltaNet + gated attention) LM with vision encoder; 27.8B incl. vision tower (27B LM); text-only use fine, mmproj optional. Highest-quality model in this catalog: Qwen card GPQA-Diamond 89.2, IFBench 79.5, SWE-bench Pro 61.7; Artificial Analysis Intelligence Index v5.0 small-class (4-40B) co-leader (20 at xhigh effort, tied with Nanbeige4.3-33B; 17 medium, 16 low, 10 non-reasoning). THINKING model: <think>...</think> on by default; chat-template kwargs enable_thinking=false (direct answers), reasoning_effort xhigh(default)/medium/low, preserve_thinking (default true) - use the GGUF's embedded Jinja template (llama.cpp --jinja). llama.cpp arch qwen35, supported since b7990 (Feb 10 2026, PR #19468). Unsloth dynamic (UD) quants chosen because they are much smaller than standard imatrix quants at equal bit-width (UD-IQ3_XXS 10.93GB vs bartowski IQ3_XXS 12.32GB); caveats: unsloth's embedded chat template is modified vs Qwen's original and these files contain no MTP layers. Alternative: bartowski/Qwen3.8-27B-GGUF (original template, built-in MTP layers for --spec-type draft-mtp; IQ2_M 10.52GB, IQ3_XXS 12.32GB, Q3_K_M 13.40GB). Device fit: 16GB iPad for UD-Q2_K_XL/UD-IQ3_XXS; UD-IQ2_XXS is the only realistic 12GB-device option (expect clear 2-bit quality loss). Dense 27B => slowest decode in the catalog. Requested quant types not published in this repo: IQ3_M, Q3_K_M, Q3_K_L, IQ2_M. Larger files for clusters, which spread a model over several devices (hashes from the Hugging Face API, 2026-11-05): UD-Q4_K_M 16.46GB, UD-Q5_K_M 19.77GB, UD-Q6_K 21.98GB, Q8_0 29.05GB. Still omitted: UD-IQ4_XS 14.25GB, Q4_0 16.06GB.",
     "files": [
       {
         "quant": "UD-IQ2_XXS",
@@ -34,6 +34,30 @@
         "filename": "Qwen3.8-27B-UD-Q3_K_XL.gguf",
         "size": 13146393504,
         "sha256": "8c2a45ff85e7674ca185ec8eb6cdeab0e617ed9d8018caed0b64380eb2a67a5e"
+      },
+      {
+        "quant": "UD-Q4_K_M",
+        "filename": "Qwen3.8-27B-UD-Q4_K_M.gguf",
+        "size": 16464440224,
+        "sha256": "322e194ff79741c7baa497c240f677f54b201b0efab44ca8e50f122b39123482"
+      },
+      {
+        "quant": "UD-Q5_K_M",
+        "filename": "Qwen3.8-27B-UD-Q5_K_M.gguf",
+        "size": 19771509664,
+        "sha256": "2de73110cb254cbf09b54b717578dadff12ef1194e7271527e68202f39ba4bfd"
+      },
+      {
+        "quant": "UD-Q6_K",
+        "filename": "Qwen3.8-27B-UD-Q6_K.gguf",
+        "size": 21983677344,
+        "sha256": "c9c206812fbe4ac7b76a729e25928b63f2ae89d37f69da7a71c20aec763cd436"
+      },
+      {
+        "quant": "Q8_0",
+        "filename": "Qwen3.8-27B-Q8_0.gguf",
+        "size": 29047086048,
+        "sha256": "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348"
       }
     ],
     "projector": {

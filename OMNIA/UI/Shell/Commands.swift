@@ -18,8 +18,8 @@ extension FocusedValues {
 }
 
 extension SidebarSection {
-    /// ⌘1 to ⌘6, in sidebar order. Settings is ⌘, as in every app.
-    static let numbered: [SidebarSection] = [.home, .chat, .models, .compare, .library, .performance]
+    /// ⌘1 to ⌘7, in sidebar order. Settings is ⌘, as in every app.
+    static let numbered: [SidebarSection] = [.home, .chat, .models, .cluster, .compare, .library, .performance]
 }
 
 /// The menu bar and keyboard shortcuts (holding ⌘ lists them).

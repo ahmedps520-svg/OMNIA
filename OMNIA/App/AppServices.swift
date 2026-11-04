@@ -26,6 +26,8 @@ final class AppServices {
     let dictation: DictationService
     let chat: ChatService
     let compare: CompareService
+    let clusterHost: ClusterHost
+    let clusterWorker: ClusterWorker
     let navigator = AppNavigator()
 
     private var started = false
@@ -54,6 +56,16 @@ final class AppServices {
         chat = ChatService(engine: engine, store: store, settings: settings, container: container, semanticIndex: semanticIndex,
                            codeRunner: codeRunner, webReader: webReader)
         compare = CompareService(engine: engine, store: store, settings: settings, container: container)
+        let clusterHost = ClusterHost(device: device)
+        self.clusterHost = clusterHost
+        clusterWorker = ClusterWorker(device: device, engine: engine, settings: settings)
+
+        // The engine plans over the cluster this device hosts, and lets go of workers that leave.
+        engine.clusterDevices = { [weak clusterHost] in clusterHost?.readyDevices() ?? [] }
+        engine.onClusterDevicesLost = { [weak clusterHost] endpoints in clusterHost?.markLost(endpoints) }
+        clusterHost.onWorkerGone = { [weak engine] endpoint in
+            Task { await engine?.clusterWorkerLeft(endpoint: endpoint) }
+        }
 
         downloads.onInstalled = { [weak self] model in
             guard let self else { return }

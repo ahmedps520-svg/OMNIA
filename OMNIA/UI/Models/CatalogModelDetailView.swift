@@ -75,6 +75,9 @@ struct CatalogModelDetailView: View {
             VStack(spacing: 8) {
                 ForEach(model.variants) { variant in
                     let assessment = ModelCatalog.assess(model, variant, device: device, profile: profile, budget: budget)
+                    // Too big here, but the cluster this device hosts can run it.
+                    let onCluster = !assessment.compatibility.isUsable && !variant.isMLX
+                        && engine.clusterPlan(facts: model.facts, fileSize: UInt64(variant.sizeBytes), budget: budget) != nil
                     HStack(spacing: 12) {
                         Button {
                             selectedVariantID = variant.id
@@ -92,9 +95,13 @@ struct CatalogModelDetailView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 8)
-                        CompatibilityBadge(compatibility: assessment.compatibility)
+                        if onCluster {
+                            Pill(text: "Runs on your cluster", symbol: "point.3.connected.trianglepath.dotted", tint: Theme.positive)
+                        } else {
+                            CompatibilityBadge(compatibility: assessment.compatibility)
+                        }
                         DownloadButton(model: model, variant: variant, errorMessage: $errorMessage,
-                                       exceedsMemory: !assessment.compatibility.isUsable)
+                                       exceedsMemory: !assessment.compatibility.isUsable && !onCluster)
                             .controlSize(.small)
                     }
                     .padding(12)
