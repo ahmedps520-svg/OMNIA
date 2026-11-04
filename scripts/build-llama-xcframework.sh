@@ -50,8 +50,10 @@ for slice in ios-arm64 ios-arm64-simulator; do
     exit 1
   fi
 done
-# The RPC backend has to be in the binary, or cluster mode would silently be missing.
-if ! nm -gU "$built/ios-arm64/llama.framework/llama" | grep -q "ggml_backend_rpc_reg"; then
+# The RPC backend has to be in the binary, or cluster mode would silently be missing. (The symbols
+# go to a file first: grep -q stops reading early, which breaks nm's pipe under pipefail.)
+nm -gU "$built/ios-arm64/llama.framework/llama" > "$work/symbols.txt"
+if ! grep -q "_ggml_backend_rpc_reg" "$work/symbols.txt"; then
   echo "error: the framework was built without the RPC backend" >&2
   exit 1
 fi

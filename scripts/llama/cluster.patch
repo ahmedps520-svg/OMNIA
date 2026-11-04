@@ -19,7 +19,7 @@ does both when it locks or leaves. With this patch:
 The wire protocol is unchanged (8.0.1), so official b11960 servers (ggml-rpc-server) work as workers.
 
 diff --git a/build-xcframework.sh b/build-xcframework.sh
-index e2a2684..e926059 100644
+index e2a2684..e926059 100755
 --- a/build-xcframework.sh
 +++ b/build-xcframework.sh
 @@ -85,6 +85,8 @@ COMMON_CMAKE_ARGS=(
