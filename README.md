@@ -188,6 +188,7 @@ Downloads use a background `URLSession` and can be paused, resumed (across relau
 - **Weight transfer.** Loading sends each device its layers from the host, about a minute per 5 GB on good Wi-Fi; a reload reads them from the device's cache instead.
 - **Supported models and PCs.** Clusters run GGUF models on llama.cpp only; MLX models stay on one device. OMNIA Node runs on Windows 10 and 11.
 - **Same build everywhere.** llama.cpp's RPC protocol changes between builds, so every device must run the same one. The host refuses a mismatched device with an explanation.
+- **PC upkeep.** OMNIA Node keeps the weights it received in `%LOCALAPPDATA%\OMNIA\Node\cache`, which grows with each model and isn't pruned; deleting the folder clears it. A new version of OMNIA Node is a new program to Windows, so its firewall question comes back once.
 
 ## Maintenance
 
