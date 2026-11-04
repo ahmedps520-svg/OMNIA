@@ -88,7 +88,8 @@ struct ChatTemplateRenderer: Sendable {
             let message: JSONValue = .object(["role": .string("user"), "content": content])
             let context: [String: Value] = [
                 "messages": .array([message.jinjaValue]), "tools": .null, "documents": .null,
-                "add_generation_prompt": .boolean(true), "bos_token": .string(bosToken), "eos_token": .string(eosToken)
+                "add_generation_prompt": .boolean(true), "bos_token": .string(bosToken), "eos_token": .string(eosToken),
+                dateFunctionName: dateFunction(Date())
             ]
             return (try? template.render(context))?.contains(probe) ?? false
         }
@@ -102,6 +103,19 @@ struct ChatTemplateRenderer: Sendable {
     /// ("properties:{" followed by an indented "{%- if …") depend on it.
     static func jinja2Compatible(_ source: String) -> String {
         source.replacing(#/\{\s+\{([%{#])-/#) { match in "{{ '{' }}{\(match.1)-" }
+            // swift-jinja copies its built-ins over the variables it renders with, so a context
+            // `strftime_now` never takes effect: templates call OMNIA's under its own name.
+            .replacing(#/\bstrftime_now\b/#, with: dateFunctionName)
+    }
+
+    static let dateFunctionName = "omnia_strftime_now"
+
+    /// `strftime_now` for a template, at `date`.
+    static func dateFunction(_ date: Date) -> Value {
+        .function { arguments, _, _ in
+            guard case .string(let format)? = arguments.first else { return .string("") }
+            return .string(Self.strftime(format, date))
+        }
     }
 
     /// - Parameter date: Fixes `strftime_now` (tests); templates otherwise see the current date.
@@ -123,12 +137,7 @@ struct ChatTemplateRenderer: Sendable {
             case .string(let text): context[key] = .string(text)
             }
         }
-        if let date {
-            context["strftime_now"] = .function { arguments, _, _ in
-                guard case .string(let format)? = arguments.first else { return .string("") }
-                return .string(Self.strftime(format, date))
-            }
-        }
+        context[Self.dateFunctionName] = Self.dateFunction(date ?? Date())
         return try template.render(context)
     }
 
