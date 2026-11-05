@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import os
 import SwiftData
+import UIKit
 
 private let chatLog = Logger(subsystem: "app.omnia", category: "chat")
 
@@ -438,7 +439,9 @@ final class ChatService {
         case .cancelled, .interrupted, .contextFull: reply.state = .interrupted
         }
         if stats.stopReason == .interrupted, reply.errorMessage == nil {
-            reply.errorMessage = "Paused to protect the device (background, memory or temperature). Tap Continue to resume."
+            let device = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+            reply.errorMessage = stats.interruption?.pauseMessage(device: device)
+                ?? "Paused because OMNIA left the screen, or this \(device) ran low on memory or got too hot. Tap Continue to resume."
         }
         if let conversation = fetchConversation(conversationID) {
             conversation.updatedAt = .now

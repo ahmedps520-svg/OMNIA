@@ -88,9 +88,11 @@ final class AppleFoundationBackend: InferenceBackend, @unchecked Sendable {
         var emitted = ""
         var firstToken: ContinuousClock.Instant?
         var stop = StopReason.endOfSequence
+        var interruption: InterruptReason?
         for try await snapshot in session.streamResponse(to: conversation.prompt, options: options) {
             if let reason = interruptState.withLock({ $0 }) {
                 stop = reason == .user ? .cancelled : .interrupted
+                interruption = reason == .user ? nil : reason
                 break
             }
             // Snapshots hold the whole reply so far; pass on what's new.
@@ -107,14 +109,16 @@ final class AppleFoundationBackend: InferenceBackend, @unchecked Sendable {
         let first = firstToken ?? finished
         let decodeSeconds = max((finished - first).seconds, 1e-6)
         let promptSeconds = max((first - started).seconds, 1e-6)
-        continuation.yield(.finished(GenerationStats(
+        var stats = GenerationStats(
             promptTokens: promptTokens, reusedPromptTokens: 0, generatedTokens: generated,
             timeToFirstToken: (first - started).seconds,
             promptTokensPerSecond: Double(promptTokens) / promptSeconds,
             tokensPerSecond: generated > 1 ? Double(generated - 1) / decodeSeconds : 0,
             totalDuration: (finished - started).seconds,
             contextUsed: min(Self.contextSize, promptTokens + generated), contextSize: Self.contextSize,
-            stopReason: stop, modelID: info.modelID, modelName: info.displayName)))
+            stopReason: stop, modelID: info.modelID, modelName: info.displayName)
+        stats.interruption = interruption
+        continuation.yield(.finished(stats))
     }
 
     // MARK: Prompt

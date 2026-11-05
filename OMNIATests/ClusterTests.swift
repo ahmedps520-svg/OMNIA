@@ -92,6 +92,30 @@ struct ClusterPlannerTests {
         #expect(result.idle.allSatisfy { $0.reason.contains("16") })
     }
 
+    /// The first real cluster: Qwen3.6 35B-A3B UD-IQ3_XXS (13.2 GB, a 248K vocabulary, its
+    /// embedding and output tables at Q6_K, 417 MB each) over the M5 iPad Pro and an iPhone 18 Pro.
+    @Test func plansQwen36OverTheIPadAndAnIPhone() throws {
+        let facts = ArchitectureFacts(architecture: "qwen35moe", layers: 40, kvElementsFull: 10 * 2 * 256 * 2,
+                                      recurrentStateBytes: 63 << 20, embeddingLength: 2048, vocabSize: 248_320,
+                                      trainContext: 262_144, parameters: 34.7, activeParameters: 3)
+        let fileSize: UInt64 = 13_211_155_424
+        let shape = ClusterPlanner.shape(facts, fileSize: fileSize, context: 32_768, kv: .q8_0,
+                                         microBatch: 512, flashAttention: true)
+        // The file's average (0.38 bytes a weight) would put each table at 191 MB.
+        #expect(abs(Double(shape.outputBytes) - 417_177_600) < 5_000_000)
+
+        let iPhone = device("iPhone 18 Pro", gigabytes: 6, bandwidth: 115, latency: 6, address: 4)
+        let result = try #require(ClusterPlanner.plan(facts, fileSize: fileSize, requestedContext: 32_768, kvTypes: [.q8_0],
+                                                      microBatch: 512, flashAttention: true, host: iPadHost,
+                                                      workers: [iPhone], spread: .fastest))
+        #expect(result.workers.map(\.device.id) == [iPhone.id])
+        #expect(result.shares.reduce(0) { $0 + $1.layers } == 40)
+        #expect(result.contextLength == 32_768)
+        for share in result.shares {
+            #expect(share.bytes <= share.device.memoryBudget)
+        }
+    }
+
     @Test func aModelThatFitsOnTheHostStaysThere() throws {
         // 4 GB fits on the host alone: no worker is worth a network hop for it.
         let result = try #require(plan(gigabytes: 4, workers: phones))

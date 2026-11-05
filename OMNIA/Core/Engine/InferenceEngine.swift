@@ -154,7 +154,8 @@ final class InferenceEngine {
                      kvChoice: KVCacheChoice? = nil, budget: MemoryBudget? = nil) -> ClusterPlan? {
         guard RPCBridge.isAvailable, let workers = clusterDevices?(), !workers.isEmpty else { return nil }
         let budget = budget ?? currentBudget()
-        let resident = budget.allowance.resident > hostReserve ? budget.allowance.resident - hostReserve : 0
+        let kept = hostReserve + ClusterPlanner.hostMargin
+        let resident = budget.allowance.resident > kept ? budget.allowance.resident - kept : 0
         let host = ClusterDevice(id: "host", name: device.name, endpoint: nil, deviceIndex: 0, memoryBudget: resident,
                                  bandwidthGBs: device.memoryBandwidthGBs, latencyMs: 0)
         let requested = min(contextLength ?? (settings.contextLength > 0 ? settings.contextLength : profile.defaultContext),

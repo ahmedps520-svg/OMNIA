@@ -18,6 +18,11 @@ does both when it locks or leaves. With this patch:
       void   ggml_backend_rpc_disconnect(const char * endpoint)
 The wire protocol is unchanged (8.0.1), so official b11960 servers (ggml-rpc-server) work as workers.
 
+llama-model-loader: after loading, releases the pages of a memory-mapped model file that no
+device's buffer wraps. Upstream unmaps only the part of the file before the first mapped tensor
+and after the last one, so on a cluster host every layer it read in order to send it to a worker
+(gigabytes) stayed resident in the host's memory for as long as the model was loaded.
+
 diff --git a/build-xcframework.sh b/build-xcframework.sh
 index e2a2684..e926059 100755
 --- a/build-xcframework.sh
@@ -479,3 +484,57 @@ index 59b8845..f518767 100644
      void get_caps(uint8_t * local_caps);
      void update_caps(const uint8_t * remote_caps);
      const char * transport_name() const;
+diff --git a/src/llama-model-loader.cpp b/src/llama-model-loader.cpp
+index a963f24..4f4d096 100644
+--- a/src/llama-model-loader.cpp
++++ b/src/llama-model-loader.cpp
+@@ -1441,6 +1441,7 @@ void llama_model_loader::init_mappings(bool prefetch, llama_mlocks * mlock_mmaps
+             std::unique_ptr<llama_mmap> mapping = std::make_unique<llama_mmap>(file.get(), prefetch_size, is_numa,
+                     lazy.for_file(idx));
+             mmaps_used.emplace_back(mapping->size(), 0);
++            mmaps_used_ranges.emplace_back();
+             if (mlock_mmaps) {
+                 std::unique_ptr<llama_mlock> mlock_mmap(new llama_mlock());
+                 mlock_mmap->init(mapping->addr());
+@@ -1740,6 +1741,7 @@ bool llama_model_loader::load_all_data(
+                 auto & mmap_used = mmaps_used[weight->idx];
+                 mmap_used.first  = std::min(mmap_used.first,  weight->offs);
+                 mmap_used.second = std::max(mmap_used.second, weight->offs + n_size);
++                mmaps_used_ranges[weight->idx].emplace_back(weight->offs, weight->offs + n_size);
+             } else {
+                 ggml_backend_tensor_set(cur, data, 0, n_size);
+             }
+@@ -1858,6 +1860,19 @@ bool llama_model_loader::load_all_data(
+                 if (mmap_used.second != 0) {
+                     mapping->unmap_fragment(mmap_used.second, mapping->size());
+                 }
++                // OMNIA: also release the pages between the mapped tensors. The tensors there were
++                // copied to another device (a cluster worker over RPC), so the mapping would only
++                // keep gigabytes of the file resident for nothing. unmap_fragment rounds inwards to
++                // whole pages, so a page shared with a mapped tensor stays.
++                auto ranges = mmaps_used_ranges.at(idx);
++                std::sort(ranges.begin(), ranges.end());
++                size_t covered = mmap_used.first;
++                for (const auto & range : ranges) {
++                    if (range.first > covered) {
++                        mapping->unmap_fragment(covered, range.first);
++                    }
++                    covered = std::max(covered, range.second);
++                }
+             }
+         }
+         if (progress_callback) {
+diff --git a/src/llama-model-loader.h b/src/llama-model-loader.h
+index ed59079..bce4271 100644
+--- a/src/llama-model-loader.h
++++ b/src/llama-model-loader.h
+@@ -137,6 +137,9 @@ struct llama_model_loader {
+     size_t size_done = 0;
+     size_t size_data = 0;
+     std::vector<std::pair<size_t, size_t>> mmaps_used;
++    // OMNIA: every byte range of a file that a mapped buffer wraps, so the pages between them
++    // (tensors copied to other devices) can be released after loading
++    std::vector<std::vector<std::pair<size_t, size_t>>> mmaps_used_ranges;
+ 
+     // define a comparator for the buft -> ctx map to ensure that the order is well-defined:
+     struct ggml_backend_buft_comparator {

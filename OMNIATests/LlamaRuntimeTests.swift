@@ -69,6 +69,19 @@ struct LlamaRuntimeTests {
         #expect(stats.generatedTokens < 400)
     }
 
+    @Test func anInterruptionRecordsWhy() async throws {
+        let runtime = try await TestModels.load("stories260K.gguf")
+        let result = try await collect(runtime.generate(.user("Once upon a time", maxTokens: 400))) { chunks in
+            if chunks == 2 { runtime.interrupt(.memoryPressure) }
+        }
+        await runtime.close()
+
+        let stats = try #require(result.stats)
+        #expect(stats.stopReason == .interrupted)
+        #expect(stats.interruption == .memoryPressure)
+        #expect(stats.generatedTokens < 400)
+    }
+
     @Test func countsTokens() async throws {
         let runtime = try await TestModels.load("stories260K.gguf")
         let short = await runtime.countTokens("Hello")

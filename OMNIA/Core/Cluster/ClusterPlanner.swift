@@ -82,6 +82,9 @@ enum ClusterPlanner {
     static let maximumDevices = 16
     /// Each worker keeps this much aside for its runtime, beyond the compute buffer.
     static let workerOverhead: UInt64 = 192 << 20
+    /// The host keeps this much of its budget free on a cluster: while loading it reads every
+    /// worker's layers from the file to send them, and iOS needs room for that to come and go.
+    static let hostMargin: UInt64 = 512 << 20
     /// Share of peak bandwidth that decoding sustains (as in MemoryPlanner's speed estimates).
     static let sustainedBandwidth = 0.6
 
@@ -104,13 +107,18 @@ enum ClusterPlanner {
         var bytesPerLayer: Double { layerBytes + kvBytesPerLayer }
     }
 
+    /// Bytes per weight of Q6_K, the least that quantizers give the embedding and output tables:
+    /// they keep them above the file's average (Qwen3.6 35B-A3B UD-IQ3_XXS: 0.82 against 0.38).
+    static let tableBytesPerWeight = 210.0 / 256
+
     static func shape(_ facts: ArchitectureFacts, fileSize: UInt64, context: Int, kv: KVCacheType,
                       microBatch: Int, flashAttention: Bool) -> Shape {
         let layers = max(1, facts.layers)
         let bytesPerWeight = facts.parameters > 0 ? Double(fileSize) / (facts.parameters * 1e9) : 1
         // The embedding and output tables (vocabulary × width each). Small models often share
         // one; counting two then only makes the plan cautious.
-        let table = min(Double(facts.vocabSize) * Double(facts.embeddingLength) * bytesPerWeight, Double(fileSize) / 4)
+        let tableWeight = max(bytesPerWeight, tableBytesPerWeight)
+        let table = min(Double(facts.vocabSize) * Double(facts.embeddingLength) * tableWeight, Double(fileSize) / 4)
         let layerBytes = max(0, Double(fileSize) - 2 * table) / Double(layers)
         let kvBytes = Double(MemoryPlanner.kvCacheBytes(facts, context: context, kv: kv, microBatch: microBatch))
         let compute = MemoryPlanner.computeBytes(facts, context: context, microBatch: microBatch, flashAttention: flashAttention)

@@ -5,7 +5,7 @@ import os
 private let llamaLog = Logger(subsystem: "app.omnia", category: "llama.cpp")
 
 /// Why a running generation was asked to stop.
-enum InterruptReason: Sendable {
+enum InterruptReason: String, Codable, Sendable {
     case user, background, memoryPressure, thermal, unload
 }
 
@@ -53,6 +53,10 @@ final class LlamaRuntime: @unchecked Sendable {
 
     // MARK: Backend
 
+    /// The latest errors ggml logged, newest last. Metal says why a GPU step failed ("Insufficient
+    /// Memory", …) only in its log; llama_decode just returns -3 on the next step.
+    private static let recentErrors = OSAllocatedUnfairLock<[String]>(initialState: [])
+
     /// Sends llama.cpp's and its image encoder's messages to the unified log.
     private static let forwardLog: ggml_log_callback = { level, text, _ in
         guard let text else { return }
@@ -60,6 +64,10 @@ final class LlamaRuntime: @unchecked Sendable {
         guard !message.isEmpty else { return }
         if level == GGML_LOG_LEVEL_ERROR {
             llamaLog.error("\(message, privacy: .public)")
+            LlamaRuntime.recentErrors.withLock { errors in
+                errors.append(message)
+                if errors.count > 8 { errors.removeFirst(errors.count - 8) }
+            }
         } else if level == GGML_LOG_LEVEL_WARN {
             llamaLog.warning("\(message, privacy: .public)")
         } else {
@@ -78,6 +86,30 @@ final class LlamaRuntime: @unchecked Sendable {
     /// server can start before any model loads).
     static func prepareBackend() {
         _ = backendReady
+    }
+
+    /// Metal's reason for the latest failed GPU step, logged since the last call: its description
+    /// of the error ("Insufficient Memory (…OutOfMemory)"), or else its line about the failed
+    /// command buffer. Nil when no GPU step failed. Reading it forgets the errors logged so far.
+    static func takeGPUError() -> String? {
+        let errors = recentErrors.withLock { errors -> [String] in
+            defer { errors.removeAll() }
+            return errors
+        }
+        return gpuError(in: errors)
+    }
+
+    /// The part of `takeGPUError` that reads the log lines (exposed for tests).
+    static func gpuError(in errors: [String]) -> String? {
+        guard let failed = errors.lastIndex(where: { $0.contains("command buffer") && $0.contains("failed") }) else {
+            return nil
+        }
+        let next = errors.index(after: failed)
+        if next < errors.endIndex, errors[next].hasPrefix("error: ") {
+            let described = errors[next].dropFirst("error: ".count).trimmingCharacters(in: .whitespaces)
+            if !described.isEmpty { return described }
+        }
+        return errors[failed]
     }
 
     /// Where an image goes in a prompt for llama.cpp's multimodal tokenizer ("<__media__>").
@@ -133,6 +165,8 @@ final class LlamaRuntime: @unchecked Sendable {
         self.queue = queue
         self.projectorURL = projectorURL
         let started = ContinuousClock.now
+        // Errors logged before this load belong to an earlier model.
+        _ = LlamaRuntime.takeGPUError()
         let footprintBefore = SystemMetrics.processFootprint() ?? 0
         let gpuBefore = SystemMetrics.gpuAllocatedBytes() ?? 0
 
@@ -204,7 +238,7 @@ final class LlamaRuntime: @unchecked Sendable {
         if warmupToken == LLAMA_TOKEN_NULL { warmupToken = 0 }
         newBatch.n_tokens = 0
         LlamaRuntime.add(&newBatch, token: warmupToken, position: 0, logits: true)
-        _ = llama_decode(createdContext, newBatch)
+        let warmup = llama_decode(createdContext, newBatch)
         llama_synchronize(createdContext)
         llama_memory_clear(llama_get_memory(createdContext), true)
         // A worker that dropped out while the model loaded, or failed its first token.
@@ -213,6 +247,18 @@ final class LlamaRuntime: @unchecked Sendable {
             llama_free(createdContext)
             llama_model_free(loadedModel)
             throw InferenceError.clusterDeviceLost(cluster.name(of: lost))
+        }
+        // A failed GPU step leaves Metal in an error state for good, so every reply would fail
+        // too. The GPU runs ahead of llama_decode, so its failure shows in the log, not the status.
+        let warmupError = LlamaRuntime.takeGPUError()
+        if warmup != 0 || warmupError != nil {
+            llama_batch_free(newBatch)
+            llama_free(createdContext)
+            llama_model_free(loadedModel)
+            if let warmupError {
+                throw InferenceError.loadFailed("Its first test token failed on the GPU: \(InferenceError.plainGPUReason(warmupError)) (Metal said \u{201C}\(warmupError)\u{201D}). Try a shorter context or a smaller quantization.")
+            }
+            throw InferenceError.loadFailed("Its first test token failed (llama_decode returned \(warmup)). Try a shorter context or a smaller quantization.")
         }
 
         let footprintAfter = SystemMetrics.processFootprint() ?? footprintBefore
@@ -312,12 +358,20 @@ final class LlamaRuntime: @unchecked Sendable {
         return model
     }
 
+    /// Positions one `llama_decode` may ask logits for: well above the 17 a speculative step uses
+    /// (`DraftModel` proposes at most 16 tokens).
+    static let maximumOutputs = 32
+
     private static func makeContext(model: OpaquePointer, configuration: RuntimeConfiguration) -> OpaquePointer? {
         var params = llama_context_default_params()
         params.n_ctx = UInt32(configuration.contextLength)
         params.n_batch = UInt32(configuration.batchSize)
         params.n_ubatch = UInt32(min(configuration.microBatchSize, configuration.batchSize))
         params.n_seq_max = 1
+        // A batch here asks for logits at one position, or at most 17 when a draft model's
+        // proposals are checked. llama.cpp's default (n_batch) makes the GPU keep logits for 512
+        // positions instead: half a gigabyte with a 248K vocabulary.
+        params.n_outputs_max = UInt32(Self.maximumOutputs)
         params.n_rs_seq = UInt32(max(0, configuration.rollbackDepth))
         params.n_threads = Int32(configuration.threads)
         params.n_threads_batch = Int32(configuration.threads)
@@ -634,6 +688,13 @@ final class LlamaRuntime: @unchecked Sendable {
         return status
     }
 
+    /// The error for a `llama_decode` that failed: what the GPU said, when Metal logged a failed
+    /// step (llama.cpp only returns -3 then).
+    private func decodeFailure(_ status: Int32) -> InferenceError {
+        if let reason = LlamaRuntime.takeGPUError() { return .gpuFailed(reason) }
+        return .decodeFailed(status)
+    }
+
     // MARK: Tokens
 
     func countTokens(_ text: String) async -> Int {
@@ -875,7 +936,7 @@ final class LlamaRuntime: @unchecked Sendable {
             if let reason = currentInterrupt {
                 clearMemory()
                 if reason == .background { throw InferenceError.backgroundExecution }
-                continuation.yield(.finished(emptyStats(stop: reason == .user ? .cancelled : .interrupted)))
+                continuation.yield(.finished(emptyStats(stop: reason == .user ? .cancelled : .interrupted, interruption: reason)))
                 return false
             }
             if let image = formatted.media[index] {
@@ -894,9 +955,15 @@ final class LlamaRuntime: @unchecked Sendable {
                 let status = try decode(batch)
                 if status != 0 {
                     clearMemory()
-                    if currentInterrupt == .background { throw InferenceError.backgroundExecution }
+                    if let reason = currentInterrupt {
+                        // Stopped on purpose (memory, heat, unload) while this batch ran.
+                        if reason == .background { throw InferenceError.backgroundExecution }
+                        continuation.yield(.finished(emptyStats(stop: reason == .user ? .cancelled : .interrupted,
+                                                                interruption: reason)))
+                        return false
+                    }
                     if status == 1 { throw InferenceError.promptTooLong(tokens: prompt.count, context: contextLimit) }
-                    throw InferenceError.decodeFailed(status)
+                    throw decodeFailure(status)
                 }
                 position += end - index
                 cachedTokens.append(contentsOf: prompt[index..<end])
@@ -948,6 +1015,7 @@ final class LlamaRuntime: @unchecked Sendable {
             modelName: info.displayName
         )
         stats.trimmedTurns = formatted.trimmedTurns > 0 ? formatted.trimmedTurns : nil
+        stats.interruption = output.stop == .interrupted ? output.interruption : nil
         stats.restoredPromptTokens = restored > 0 ? restored : nil
         if formatted.imageCount > 0 {
             stats.imageCount = formatted.imageCount
@@ -974,6 +1042,8 @@ final class LlamaRuntime: @unchecked Sendable {
         var firstTokenAt: ContinuousClock.Instant?
         var drafted = 0
         var accepted = 0
+        /// Why the reply was interrupted, when it was (`stop == .interrupted`).
+        var interruption: InterruptReason?
 
         /// Takes one sampled token into the reply. Returns false when the reply ends with it.
         mutating func accept(_ token: llama_token, from runtime: LlamaRuntime, emit: (String) -> Void) -> Bool {
@@ -1017,6 +1087,7 @@ final class LlamaRuntime: @unchecked Sendable {
         while output.generated < maxTokens {
             if let reason = currentInterrupt {
                 output.stop = reason == .user ? .cancelled : .interrupted
+                output.interruption = reason
                 return
             }
             let token = llama_sampler_sample(sampler, context, -1)
@@ -1036,11 +1107,12 @@ final class LlamaRuntime: @unchecked Sendable {
             }
             if status != 0 {
                 clearMemory()
-                if currentInterrupt != nil {
+                if let reason = currentInterrupt {
                     output.stop = .interrupted
+                    output.interruption = reason
                     return
                 }
-                throw InferenceError.decodeFailed(status)
+                throw decodeFailure(status)
             }
             position += 1
             cachedTokens.append(token)
@@ -1064,6 +1136,7 @@ final class LlamaRuntime: @unchecked Sendable {
         while output.generated < maxTokens {
             if let reason = currentInterrupt {
                 output.stop = reason == .user ? .cancelled : .interrupted
+                output.interruption = reason
                 return
             }
             guard position < contextLimit else {
@@ -1095,11 +1168,12 @@ final class LlamaRuntime: @unchecked Sendable {
             if status != 0 {
                 clearMemory()
                 draft.reset()
-                if currentInterrupt != nil {
+                if let reason = currentInterrupt {
                     output.stop = .interrupted
+                    output.interruption = reason
                     return
                 }
-                throw InferenceError.decodeFailed(status)
+                throw decodeFailure(status)
             }
             cachedTokens.append(next)
             position += 1
@@ -1158,7 +1232,7 @@ final class LlamaRuntime: @unchecked Sendable {
             let status = try decode(batch)
             guard status == 0 else {
                 clearMemory()
-                throw InferenceError.decodeFailed(status)
+                throw decodeFailure(status)
             }
             cachedTokens.append(contentsOf: tokens[index..<end])
             index = end
@@ -1272,11 +1346,13 @@ final class LlamaRuntime: @unchecked Sendable {
         }
     }
 
-    private func emptyStats(stop: StopReason) -> GenerationStats {
-        GenerationStats(promptTokens: 0, reusedPromptTokens: 0, generatedTokens: 0, timeToFirstToken: 0,
-                        promptTokensPerSecond: 0, tokensPerSecond: 0, totalDuration: 0,
-                        contextUsed: cachedTokens.count, contextSize: Int(llama_n_ctx(context)),
-                        stopReason: stop, modelID: info.modelID, modelName: info.displayName)
+    private func emptyStats(stop: StopReason, interruption: InterruptReason? = nil) -> GenerationStats {
+        var stats = GenerationStats(promptTokens: 0, reusedPromptTokens: 0, generatedTokens: 0, timeToFirstToken: 0,
+                                    promptTokensPerSecond: 0, tokensPerSecond: 0, totalDuration: 0,
+                                    contextUsed: cachedTokens.count, contextSize: Int(llama_n_ctx(context)),
+                                    stopReason: stop, modelID: info.modelID, modelName: info.displayName)
+        stats.interruption = stop == .interrupted ? interruption : nil
+        return stats
     }
 
     /// The sampler chain. A grammar comes first, so later samplers only see tokens it allows.
@@ -1400,7 +1476,7 @@ final class LlamaRuntime: @unchecked Sendable {
             }
             let promptStart = ContinuousClock.now
             let status = try decode(batch)
-            guard status == 0 else { throw InferenceError.decodeFailed(status) }
+            guard status == 0 else { throw decodeFailure(status) }
             llama_synchronize(context)
             let promptSeconds = max(promptStart.secondsElapsed, 1e-6)
 
@@ -1414,7 +1490,7 @@ final class LlamaRuntime: @unchecked Sendable {
                 batch.n_tokens = 0
                 LlamaRuntime.add(&batch, token: token, position: position, logits: true)
                 let decodeStatus = try decode(batch)
-                guard decodeStatus == 0 else { throw InferenceError.decodeFailed(decodeStatus) }
+                guard decodeStatus == 0 else { throw decodeFailure(decodeStatus) }
                 llama_synchronize(context)
                 position += 1
                 if step == 0 { firstTokenSeconds = promptSeconds + generationStart.secondsElapsed }

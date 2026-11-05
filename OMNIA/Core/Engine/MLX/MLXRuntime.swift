@@ -340,7 +340,7 @@ final class MLXRuntime: InferenceBackend, @unchecked Sendable {
         let generated = outcome?.generated ?? 0
         let prefill = max(outcome?.prefillSeconds ?? 0, 1e-6)
         let decode = max(outcome?.decodeSeconds ?? 0, 1e-6)
-        return GenerationStats(
+        var stats = GenerationStats(
             promptTokens: prompt, reusedPromptTokens: 0, generatedTokens: generated,
             timeToFirstToken: outcome?.firstTokenSeconds ?? prefill,
             promptTokensPerSecond: prompt > 0 ? Double(prompt) / prefill : 0,
@@ -348,6 +348,8 @@ final class MLXRuntime: InferenceBackend, @unchecked Sendable {
             totalDuration: (ContinuousClock.now - started).seconds,
             contextUsed: min(prompt + generated, info.configuration.contextLength), contextSize: info.configuration.contextLength,
             stopReason: stop, modelID: info.modelID, modelName: info.displayName)
+        stats.interruption = stop == .interrupted ? outcome?.interrupt : nil
+        return stats
     }
 
     // MARK: InferenceBackend

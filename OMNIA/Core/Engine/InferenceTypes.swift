@@ -174,6 +174,8 @@ struct GenerationStats: Codable, Hashable, Sendable {
     /// Images in the prompt, and the context they take up (included in `promptTokens`).
     var imageCount: Int?
     var imageTokens: Int?
+    /// Why OMNIA stopped the reply, when `stopReason` is `.interrupted`.
+    var interruption: InterruptReason?
 
     /// Share of drafted tokens the model kept.
     var draftAcceptance: Double? {
@@ -246,6 +248,8 @@ enum InferenceError: LocalizedError {
     case tokenizationFailed
     case templateFailed
     case decodeFailed(Int32)
+    /// A GPU step failed; the text is Metal's own description of why ("Insufficient Memory …").
+    case gpuFailed(String)
     /// The engine itself reported a failure (MLX losing the GPU, for one).
     case engineFailed(String)
     case promptTooLong(tokens: Int, context: Int)
@@ -284,6 +288,8 @@ enum InferenceError: LocalizedError {
             "The model's chat template couldn't be applied."
         case .decodeFailed(let code):
             "Inference failed (llama_decode returned \(code)). The model reloads for your next message; tap Continue to try again."
+        case .gpuFailed(let reason):
+            "The GPU stopped: \(InferenceError.plainGPUReason(reason)) (Metal said \u{201C}\(reason)\u{201D}). The model reloads for your next message; tap Continue to try again."
         case .engineFailed(let message):
             "The model stopped working (\(message)). It reloads for your next message; tap Continue to try again."
         case let .promptTooLong(tokens, context):
@@ -319,8 +325,42 @@ extension InferenceError {
     /// loaded again before its next reply.
     var needsReload: Bool {
         switch self {
-        case .decodeFailed, .engineFailed, .clusterDeviceLost: true
+        case .decodeFailed, .gpuFailed, .engineFailed, .clusterDeviceLost: true
         default: false
+        }
+    }
+
+    /// Metal's description of a failed GPU step, in plain words.
+    static func plainGPUReason(_ reason: String) -> String {
+        let text = reason.lowercased()
+        if text.contains("outofmemory") || text.contains("insufficient memory") {
+            return "this device ran out of memory for the model"
+        }
+        if text.contains("background") || text.contains("insufficient permission") || text.contains("notpermitted") {
+            return "iOS doesn't allow GPU work while OMNIA is in the background"
+        }
+        if text.contains("interactivity") {
+            return "iOS stopped a long GPU step to keep the screen responsive"
+        }
+        if text.contains("timeout") {
+            return "a GPU step took too long and iOS stopped it"
+        }
+        if text.contains("pagefault") || text.contains("page fault") || text.contains("invalid resource") {
+            return "it read memory it had no access to, which is a bug in OMNIA's engine"
+        }
+        return "a GPU step failed"
+    }
+}
+
+extension InterruptReason {
+    /// Why a reply paused, shown under it; nil for the user's own stop. `device` is "iPad" or "iPhone".
+    func pauseMessage(device: String) -> String? {
+        switch self {
+        case .user: nil
+        case .background: "Paused because OMNIA left the screen: iOS doesn't allow GPU work in the background. Tap Continue to resume."
+        case .memoryPressure: "Paused because this \(device) ran low on memory, so OMNIA released the model to keep it stable. Tap Continue to resume."
+        case .thermal: "Paused because this \(device) got too hot. Tap Continue once it has cooled down."
+        case .unload: "Paused because the model was unloaded. Tap Continue to resume."
         }
     }
 }
