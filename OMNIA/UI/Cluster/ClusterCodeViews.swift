@@ -9,7 +9,7 @@ struct QRCodeView: View {
 
     var body: some View {
         Group {
-            if let image = Self.render(text) {
+            if let image = Self.image(for: text) {
                 Image(uiImage: image)
                     .interpolation(.none)
                     .resizable()
@@ -26,12 +26,26 @@ struct QRCodeView: View {
         .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
+    /// The last code drawn. The Cluster screen redraws with every device's heartbeat while its
+    /// invitation stays the same, and drawing the code again took a new Core Image context each time.
+    @MainActor private static var cached: (text: String, image: UIImage?)?
+    @MainActor private static let context = CIContext()
+
+    @MainActor
+    static func image(for text: String) -> UIImage? {
+        if let cached, cached.text == text { return cached.image }
+        let image = render(text)
+        cached = (text, image)
+        return image
+    }
+
+    @MainActor
     static func render(_ text: String) -> UIImage? {
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(text.utf8)
         filter.correctionLevel = "M"
         guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)),
-              let image = CIContext().createCGImage(output, from: output.extent) else { return nil }
+              let image = context.createCGImage(output, from: output.extent) else { return nil }
         return UIImage(cgImage: image)
     }
 }

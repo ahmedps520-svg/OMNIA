@@ -1,15 +1,24 @@
 import SwiftUI
 
-/// What the menu bar and keyboard shortcuts act on in the window in front.
-struct WindowCommands {
+/// What the menu bar and keyboard shortcuts act on in the window in front. Equal for the same
+/// window: the closures are made anew with every redraw, and a value that differs makes iPadOS
+/// rebuild the whole menu bar. They act on the window's state, so the first ones keep working.
+struct WindowCommands: Equatable {
+    var window: UUID
     var newChat: () -> Void
     var show: (SidebarSection) -> Void
     var searchConversations: () -> Void
+
+    static func == (lhs: WindowCommands, rhs: WindowCommands) -> Bool { lhs.window == rhs.window }
 }
 
-/// Commands for the chat in front.
-struct ChatCommands {
+/// Commands for the chat in front. Equal for the same chat (the composer redraws the chat with
+/// every keystroke).
+struct ChatCommands: Equatable {
+    var chat: UUID
     var switchModel: () -> Void
+
+    static func == (lhs: ChatCommands, rhs: ChatCommands) -> Bool { lhs.chat == rhs.chat }
 }
 
 extension FocusedValues {

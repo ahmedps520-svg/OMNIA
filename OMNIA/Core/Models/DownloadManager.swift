@@ -101,7 +101,15 @@ enum DownloadError: LocalizedError {
 final class DownloadManager: NSObject {
     nonisolated static let sessionIdentifier = "app.omnia.model-downloads"
 
-    private(set) var items: [String: DownloadItem] = [:]
+    private(set) var items: [String: DownloadItem] = [:] {
+        didSet {
+            let active = items.values.contains { $0.phase.isActive }
+            if active != hasActiveDownloads { hasActiveDownloads = active }
+        }
+    }
+    /// Something is downloading or being verified. Kept apart from `items`, whose progress
+    /// changes several times a second, so the sidebar's badge doesn't redraw with every update.
+    private(set) var hasActiveDownloads = false
     var onInstalled: ((InstalledModel) -> Void)?
     /// Image support finished installing for these models.
     var onProjectorInstalled: (([InstalledModel]) -> Void)?
@@ -122,8 +130,6 @@ final class DownloadManager: NSObject {
         items.values.sorted { $0.startedAt < $1.startedAt }
     }
 
-    var hasActiveDownloads: Bool { items.values.contains { $0.phase.isActive } }
-
     init(store: ModelStore, semanticIndex: SemanticIndex? = nil, settings: AppSettings) {
         self.store = store
         self.semanticIndex = semanticIndex
@@ -142,6 +148,7 @@ final class DownloadManager: NSObject {
         ModelStore.excludeFromBackup(Self.stagingDirectory)
         restoreState()
         reattachRunningTasks()
+        hasActiveDownloads = items.values.contains { $0.phase.isActive }
     }
 
     // MARK: Paths

@@ -40,6 +40,13 @@ struct PerformanceView: View {
         }
         .onAppear { monitor.setDetailedSampling(true) }
         .onDisappear { if !engine.isGenerating { monitor.setDetailedSampling(false) } }
+        .task {
+            // Free space, off the main thread and twice a minute: the tiles redraw with every sample.
+            while !Task.isCancelled {
+                await FreeStorage.shared.refresh(maxAge: 25)
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
     }
 
     // MARK: Header
@@ -85,7 +92,7 @@ struct PerformanceView: View {
                      detail: monitor.batteryLevel.map { "Battery \(Int($0 * 100))%\(monitor.batteryState == .charging ? ", charging" : "")" },
                      symbol: monitor.isLowPowerMode ? "battery.25" : "battery.100")
             StatTile(title: "Model storage", value: ByteFormat.file(store.storageUsed),
-                     detail: SystemMetrics.storage().map { "\(ByteFormat.file($0.availableForImportantUsage)) free on device" }, symbol: "internaldrive")
+                     detail: FreeStorage.shared.status.map { "\(ByteFormat.file($0.availableForImportantUsage)) free on device" }, symbol: "internaldrive")
             StatTile(title: "Model budget", value: ByteFormat.memory(budget.usable),
                      detail: "\(engine.profile.title) profile, safety margin applied", symbol: "square.stack.3d.up")
         }

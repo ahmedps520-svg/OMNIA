@@ -10,6 +10,11 @@ struct RootView: View {
     @Environment(ClusterWorker.self) private var clusterWorker
 
     @State private var selection: SidebarSelection?
+    /// The ID the new chat's conversation gets with its first message. The new chat's screen uses
+    /// it from the start, so sending keeps the same screen instead of building another.
+    @State private var newChatID = UUID()
+    /// Identifies this window's commands for the menu bar (see `WindowCommands`).
+    @State private var windowID = UUID()
     @State private var columnVisibility: NavigationSplitViewVisibility
     @State private var showOnboarding = false
     @State private var continueOnUnsupported = false
@@ -68,7 +73,7 @@ struct RootView: View {
                 .navigationSplitViewColumnWidth(min: 270, ideal: 300, max: 360)
         } detail: {
             NavigationStack {
-                DetailRouter(selection: $selection)
+                DetailRouter(selection: $selection, newChatID: newChatID)
             }
             .id(detailIdentity)
         }
@@ -97,6 +102,10 @@ struct RootView: View {
             }
         }
         .omniaAnimation(settings.animations, value: engine.notice)
+        .onChange(of: selection) { _, new in
+            // The new chat became this conversation: the next new chat starts with a fresh ID.
+            if new == .conversation(newChatID) { newChatID = UUID() }
+        }
         .onChange(of: navigator.request, initial: true) { _, request in
             guard let request else { return }
             if let conversation = request.conversation {
@@ -107,6 +116,7 @@ struct RootView: View {
             navigator.handled(request)
         }
         .focusedSceneValue(\.windowCommands, WindowCommands(
+            window: windowID,
             newChat: { selection = .section(.chat) },
             show: { selection = .section($0) },
             searchConversations: {
@@ -115,9 +125,12 @@ struct RootView: View {
             }))
     }
 
-    /// Each section gets its own navigation stack; conversations share the chat stack.
+    /// Each section and each conversation gets its own navigation stack, so switching never shows
+    /// what another one had pushed. A new chat already has its conversation's identity: when its
+    /// first message creates the conversation, the screen stays.
     private var detailIdentity: String {
         switch selection {
+        case .section(.chat): "chat-\(newChatID.uuidString)"
         case .section(let section): section.rawValue
         case .conversation(let id): "chat-\(id.uuidString)"
         case nil: "home"
@@ -127,15 +140,16 @@ struct RootView: View {
 
 struct DetailRouter: View {
     @Binding var selection: SidebarSelection?
+    /// The conversation ID the new chat's first message creates.
+    var newChatID = UUID()
 
     var body: some View {
         switch selection {
         case .section(.home), nil:
             HomeView(selection: $selection)
-        case .section(.chat):
-            ChatView(conversationID: nil, selection: $selection)
-        case .conversation(let id):
-            ChatView(conversationID: id, selection: $selection)
+        case .section(.chat), .conversation:
+            // One branch for both: a new chat becoming its conversation stays the same view.
+            ChatView(conversationID: conversationID, newConversationID: newChatID, selection: $selection)
         case .section(.models):
             ModelsView(selection: $selection)
         case .section(.cluster):
@@ -149,6 +163,11 @@ struct DetailRouter: View {
         case .section(.settings):
             SettingsView()
         }
+    }
+
+    private var conversationID: UUID? {
+        if case .conversation(let id) = selection { return id }
+        return nil
     }
 }
 

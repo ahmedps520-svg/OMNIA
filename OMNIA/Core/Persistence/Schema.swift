@@ -39,8 +39,9 @@ final class Conversation {
     @Relationship(deleteRule: .cascade, inverse: \Message.conversation)
     var messages: [Message] = []
 
-    init(title: String = "New Conversation", modelID: String?, modelName: String?, systemPrompt: String? = nil) {
-        id = UUID()
+    init(id: UUID = UUID(), title: String = "New Conversation", modelID: String?, modelName: String?,
+         systemPrompt: String? = nil) {
+        self.id = id
         self.title = title
         createdAt = .now
         updatedAt = .now

@@ -11,17 +11,28 @@ struct CatalogModelDetailView: View {
     @State private var contextLength: Double = 8192
     @State private var kvChoice: KVCacheChoice = .automatic
     @State private var errorMessage: String?
+    /// Every version's assessment (and cluster plan) stays until the planning inputs change: the
+    /// context slider below redraws this screen with every step it moves.
+    @State private var fits = Memo<PlanningInputs, [String: VariantFit]>()
 
     private let device = AppServices.shared.device
 
+    private struct VariantFit {
+        let assessment: VariantAssessment
+        /// Too big here, but the cluster this device hosts can run it.
+        let onCluster: Bool
+    }
+
     var body: some View {
-        let budget = engine.currentBudget()
+        let inputs = PlanningInputs(engine: engine, settings: settings)
+        let budget = inputs.budget
         let profile = engine.profile
+        let variantFits = fits.value(for: inputs) { assessVariants(budget: budget, profile: profile) }
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
                 header
                 factsGrid
-                variantsSection(budget: budget, profile: profile)
+                variantsSection(variantFits)
                 memorySection(budget: budget, profile: profile)
             }
             .padding(24)
@@ -66,7 +77,18 @@ struct CatalogModelDetailView: View {
         }
     }
 
-    private func variantsSection(budget: MemoryBudget, profile: OptimizationProfile) -> some View {
+    private func assessVariants(budget: MemoryBudget, profile: OptimizationProfile) -> [String: VariantFit] {
+        var fits: [String: VariantFit] = [:]
+        for variant in model.variants {
+            let assessment = ModelCatalog.assess(model, variant, device: device, profile: profile, budget: budget)
+            let onCluster = !assessment.compatibility.isUsable && !variant.isMLX
+                && engine.clusterPlan(facts: model.facts, fileSize: UInt64(variant.sizeBytes), budget: budget) != nil
+            fits[variant.id] = VariantFit(assessment: assessment, onCluster: onCluster)
+        }
+        return fits
+    }
+
+    private func variantsSection(_ fits: [String: VariantFit]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader("Quantizations", subtitle: "Lower bit-widths are smaller and faster but lose some accuracy. Estimates use this device's measured memory limits.")
             if let errorMessage {
@@ -74,10 +96,16 @@ struct CatalogModelDetailView: View {
             }
             VStack(spacing: 8) {
                 ForEach(model.variants) { variant in
-                    let assessment = ModelCatalog.assess(model, variant, device: device, profile: profile, budget: budget)
-                    // Too big here, but the cluster this device hosts can run it.
-                    let onCluster = !assessment.compatibility.isUsable && !variant.isMLX
-                        && engine.clusterPlan(facts: model.facts, fileSize: UInt64(variant.sizeBytes), budget: budget) != nil
+                    if let fit = fits[variant.id] {
+                        variantRow(variant, assessment: fit.assessment, onCluster: fit.onCluster)
+                    }
+                }
+            }
+            .surface(padding: 8)
+        }
+    }
+
+    private func variantRow(_ variant: CatalogVariant, assessment: VariantAssessment, onCluster: Bool) -> some View {
                     HStack(spacing: 12) {
                         Button {
                             selectedVariantID = variant.id
@@ -107,10 +135,6 @@ struct CatalogModelDetailView: View {
                     .padding(12)
                     .background(selectedVariantID == variant.id ? Color.accentColor.opacity(0.07) : Color.clear,
                                 in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-            }
-            .surface(padding: 8)
-        }
     }
 
     @ViewBuilder

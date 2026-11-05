@@ -8,13 +8,14 @@ struct ChatView: View {
     static let maxImagesPerMessage = 4
 
     let conversationID: UUID?
+    /// A new chat's conversation ID, which its first message creates (see `RootView.newChatID`).
+    let newConversationID: UUID
     @Binding var selection: SidebarSelection?
 
     @Environment(ChatService.self) private var chat
     @Environment(ModelStore.self) private var store
     @Environment(InferenceEngine.self) private var engine
     @Environment(AppSettings.self) private var settings
-    @Environment(\.horizontalSizeClass) private var sizeClass
 
     @Query private var results: [Conversation]
     @Query(sort: \PromptTemplate.title) private var templates: [PromptTemplate]
@@ -33,12 +34,14 @@ struct ChatView: View {
     @State private var attachmentError: String?
     @State private var editing: Message?
     @State private var editText = ""
-    @State private var isNearBottom = true
 
-    init(conversationID: UUID?, selection: Binding<SidebarSelection?>) {
+    init(conversationID: UUID?, newConversationID: UUID = UUID(), selection: Binding<SidebarSelection?>) {
         self.conversationID = conversationID
+        self.newConversationID = newConversationID
         _selection = selection
-        let target = conversationID ?? UUID()
+        // A new chat watches for its own conversation, which keeps the query the same from one
+        // redraw to the next and shows the conversation as soon as the first message creates it.
+        let target = conversationID ?? newConversationID
         _results = Query(filter: #Predicate<Conversation> { $0.id == target })
     }
 
@@ -51,6 +54,8 @@ struct ChatView: View {
     private var isGenerating: Bool { chat.isGenerating(conversation?.id) }
 
     var body: some View {
+        // Sorted once per redraw (each sort reads every message's position from SwiftData).
+        let messages = self.messages
         VStack(spacing: 0) {
             if messages.isEmpty {
                 ChatEmptyState(model: activeModel, templates: Array(templates.prefix(6))) { template in
@@ -59,7 +64,7 @@ struct ChatView: View {
                     selection = .section(.models)
                 }
             } else {
-                transcript
+                ChatTranscript(messages: messages, editing: $editing, editText: $editText, actions: actions(for:))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -78,7 +83,7 @@ struct ChatView: View {
                     isGenerating: isGenerating,
                     canSend: canSend,
                     placeholder: activeModel.map { "Message \($0.displayName)" } ?? "Download a model to start",
-                    contextUsage: contextUsage,
+                    contextUsage: contextUsage(messages),
                     onSend: send,
                     onStop: { chat.stop() },
                     onAttachPhotos: { showPhotoPicker = true },
@@ -101,7 +106,8 @@ struct ChatView: View {
         .sheet(isPresented: $showModelSwitcher) {
             ModelSwitcher(selectedID: activeModel?.id, onSelect: choose)
         }
-        .focusedSceneValue(\.chatCommands, ChatCommands(switchModel: { showModelSwitcher = true }))
+        .focusedSceneValue(\.chatCommands, ChatCommands(chat: conversationID ?? newConversationID,
+                                                        switchModel: { showModelSwitcher = true }))
         .fileImporter(isPresented: $showImporter, allowedContentTypes: DocumentExtractor.supportedTypes + ImageInput.supportedTypes,
                       allowsMultipleSelection: true) { result in
             handleImport(result)
@@ -136,47 +142,6 @@ struct ChatView: View {
     private func refreshWorkspace() {
         let finished = messages.filter { $0.id != chat.live?.messageID }
         workspace.artifacts = CodeArtifact.extract(from: finished)
-    }
-
-    // MARK: Transcript
-
-    private var transcript: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 26) {
-                    ForEach(messages) { message in
-                        MessageRow(
-                            message: message,
-                            live: chat.live?.messageID == message.id ? chat.live : nil,
-                            isLast: message.id == messages.last?.id,
-                            isEditing: editing?.id == message.id,
-                            editText: $editText,
-                            actions: actions(for: message)
-                        )
-                        .id(message.id)
-                    }
-                    Color.clear.frame(height: 1).id("bottom")
-                }
-                .padding(.horizontal, sizeClass == .compact ? 16 : 28)
-                .padding(.top, 20)
-                .padding(.bottom, 12)
-                .frame(maxWidth: 860)
-                .frame(maxWidth: .infinity)
-            }
-            .scrollDismissesKeyboard(.interactively)
-            .defaultScrollAnchor(.bottom)
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 120
-            } action: { _, nearBottom in
-                isNearBottom = nearBottom
-            }
-            .onChange(of: chat.live?.displayContent.count) { _, _ in
-                if isNearBottom { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
-            .onChange(of: messages.count) { _, _ in
-                withAnimation(.smooth) { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
-        }
     }
 
     // MARK: Toolbar
@@ -236,8 +201,8 @@ struct ChatView: View {
         return chat.errors[id] ?? attachmentError
     }
 
-    private var contextUsage: Double? {
-        if let live = chat.live, live.conversationID == conversation?.id, let stats = engine.lastStats, stats.contextSize > 0 {
+    private func contextUsage(_ messages: [Message]) -> Double? {
+        if isGenerating, let stats = engine.lastStats, stats.contextSize > 0 {
             return stats.contextUtilization
         }
         guard let stats = messages.last(where: { $0.stats != nil })?.stats else { return nil }
@@ -262,7 +227,8 @@ struct ChatView: View {
         attachments = []
         images = [:]
         attachmentError = nil
-        let result = chat.send(text, attachments: files, images: pictures, in: conversation, modelID: draftModelID)
+        let result = chat.send(text, attachments: files, images: pictures, in: conversation, modelID: draftModelID,
+                               newConversationID: conversation == nil ? newConversationID : nil)
         if conversation == nil, let created = result {
             selection = .conversation(created.id)
         }
@@ -527,6 +493,61 @@ struct ChatEmptyState: View {
             }
             .padding(.horizontal, 24)
             .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+/// The conversation's messages: the only part of the chat that reads the reply in progress, so it
+/// alone draws again with every token. The screen around it (the composer, the toolbar's model
+/// menu, the menu bar's commands) stays as it is while a reply streams.
+private struct ChatTranscript: View {
+    let messages: [Message]
+    @Binding var editing: Message?
+    @Binding var editText: String
+    let actions: (Message) -> MessageRow.Actions
+
+    @Environment(ChatService.self) private var chat
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var isNearBottom = true
+
+    var body: some View {
+        let lastID = messages.last?.id
+        let live = chat.live
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 26) {
+                    ForEach(messages) { message in
+                        MessageRow(
+                            message: message,
+                            live: live?.messageID == message.id ? live : nil,
+                            isLast: message.id == lastID,
+                            isEditing: editing?.id == message.id,
+                            editText: $editText,
+                            actions: actions(message)
+                        )
+                        .id(message.id)
+                    }
+                    Color.clear.frame(height: 1).id("bottom")
+                }
+                .padding(.horizontal, sizeClass == .compact ? 16 : 28)
+                .padding(.top, 20)
+                .padding(.bottom, 12)
+                .frame(maxWidth: 860)
+                .frame(maxWidth: .infinity)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .defaultScrollAnchor(.bottom)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 120
+            } action: { _, nearBottom in
+                isNearBottom = nearBottom
+            }
+            .onChange(of: live?.displayContent.count) { _, _ in
+                if isNearBottom { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            .onChange(of: messages.count) { _, _ in
+                withAnimation(.smooth) { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
         }
     }
 }

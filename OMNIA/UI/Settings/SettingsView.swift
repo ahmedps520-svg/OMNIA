@@ -160,7 +160,7 @@ struct SettingsView: View {
                 if let embedder = semanticIndex.embedder {
                     LabeledContent("\(embedder.name) (library search)", value: ByteFormat.file(embedder.sizeBytes))
                 }
-                if let storage = SystemMetrics.storage() {
+                if let storage = FreeStorage.shared.status {
                     LabeledContent("Free on device", value: ByteFormat.file(storage.availableForImportantUsage))
                 }
                 LabeledContent("Conversations", value: conversationCount.formatted())
@@ -211,6 +211,7 @@ struct SettingsView: View {
         .background(Theme.canvas)
         .navigationTitle("Settings")
         .onAppear { chatMemoryBytes = engine.conversationMemory.totalBytes }
+        .task { await FreeStorage.shared.refresh() }
         .confirmationDialog("Delete all conversations?", isPresented: $showClearConversations, titleVisibility: .visible) {
             Button("Delete All Conversations", role: .destructive) {
                 // Through ChatService so a running reply stops first; each deletion cascades to its messages.

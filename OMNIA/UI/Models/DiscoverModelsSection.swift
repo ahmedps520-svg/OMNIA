@@ -5,25 +5,44 @@ struct DiscoverModelsSection: View {
     @Environment(InferenceEngine.self) private var engine
     @Environment(DownloadManager.self) private var downloads
     @Environment(ModelStore.self) private var store
+    @Environment(AppSettings.self) private var settings
 
     @State private var mode: RecommendationMode?
     @State private var showIncompatible = false
     @State private var errorMessage: String?
+    /// Planning every catalog file takes thousands of planner steps; this section redraws far
+    /// more often than what they depend on changes (a download's progress, a cluster heartbeat).
+    @State private var catalogFit = Memo<PlanningInputs, CatalogFit>()
+    @State private var recommendations = Memo<RecommendationKey, Recommendation?>()
 
     private let device = AppServices.shared.device
 
+    /// Every catalog model by where it runs, for one set of planning inputs.
+    private struct CatalogFit {
+        typealias Entry = (model: CatalogModel, best: (CatalogVariant, VariantAssessment)?)
+        var fitting: [Entry]
+        var onCluster: [Entry]
+        var tooLarge: [Entry]
+        /// The largest version of each `onCluster` model that the cluster can run.
+        var clusterFits: [String: CatalogVariant]
+    }
+
+    private struct RecommendationKey: Hashable {
+        var inputs: PlanningInputs
+        var mode: RecommendationMode
+    }
+
     var body: some View {
-        let budget = engine.currentBudget()
+        let inputs = PlanningInputs(engine: engine, settings: settings)
+        let budget = inputs.budget
         let profile = engine.profile
-        let assessed = ModelCatalog.curated.map { model in
-            (model: model, best: ModelCatalog.bestVariant(of: model, device: device, profile: profile, budget: budget))
+        let fit = catalogFit.value(for: inputs) {
+            Self.fit(engine: engine, device: device, profile: profile, budget: budget)
         }
-        let fitting = assessed.filter { $0.best != nil }.sorted { $0.model.qualityScore > $1.model.qualityScore }
-        let beyondDevice = assessed.filter { $0.best == nil }
-        let clusterFits = Self.clusterFits(beyondDevice.map(\.model), engine: engine, budget: budget)
-        let onCluster = beyondDevice.filter { clusterFits[$0.model.id] != nil }
-            .sorted { $0.model.qualityScore > $1.model.qualityScore }
-        let tooLarge = beyondDevice.filter { clusterFits[$0.model.id] == nil }
+        let fitting = fit.fitting
+        let onCluster = fit.onCluster
+        let tooLarge = fit.tooLarge
+        let clusterFits = fit.clusterFits
 
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 12) {
@@ -34,7 +53,9 @@ struct DiscoverModelsSection: View {
                 .pickerStyle(.segmented)
                 let current = mode ?? profile.defaultRecommendation
                 Text(current.explanation).font(.caption).foregroundStyle(.secondary)
-                if let recommendation = ModelCatalog.recommend(current, device: device, profile: profile, budget: budget) {
+                if let recommendation = recommendations.value(for: RecommendationKey(inputs: inputs, mode: current), compute: {
+                    ModelCatalog.recommend(current, device: device, profile: profile, budget: budget)
+                }) {
                     VStack(alignment: .leading, spacing: 12) {
                         RecommendationCard(recommendation: recommendation, device: device)
                         HStack {
@@ -98,6 +119,22 @@ struct DiscoverModelsSection: View {
                 }
             }
         }
+    }
+
+    @MainActor
+    private static func fit(engine: InferenceEngine, device: DeviceProfile, profile: OptimizationProfile,
+                            budget: MemoryBudget) -> CatalogFit {
+        let assessed: [CatalogFit.Entry] = ModelCatalog.curated.map { model in
+            (model: model, best: ModelCatalog.bestVariant(of: model, device: device, profile: profile, budget: budget))
+        }
+        let fitting = assessed.filter { $0.best != nil }.sorted { $0.model.qualityScore > $1.model.qualityScore }
+        let beyondDevice = assessed.filter { $0.best == nil }
+        let fits = clusterFits(beyondDevice.map(\.model), engine: engine, budget: budget)
+        return CatalogFit(
+            fitting: fitting,
+            onCluster: beyondDevice.filter { fits[$0.model.id] != nil }.sorted { $0.model.qualityScore > $1.model.qualityScore },
+            tooLarge: beyondDevice.filter { fits[$0.model.id] == nil },
+            clusterFits: fits)
     }
 
     /// For models too large for this device: the largest version the cluster hosted here can run

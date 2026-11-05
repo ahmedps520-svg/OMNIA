@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Testing
 @testable import OMNIA
 
@@ -340,6 +341,39 @@ struct ClusterHostTests {
                                                     devices: [ClusterProtocol.DeviceUpdate(index: 0, memoryFree: 1 << 30)])
         #expect(try post(host, "/v1/heartbeat", busy).0 == 200)
         #expect(host.readyDevices().first?.memoryBudget == (12 << 30) - (768 << 20))
+    }
+
+    /// Every view of the cluster reads `workers`, so a heartbeat whose round trip and free memory
+    /// only jittered must leave it alone; a real change still gets through.
+    @Test func heartbeatsThatChangeNothingVisibleLeaveTheWorkersAlone() throws {
+        let host = try makeHost()
+        _ = try join(host, worker("pc", free: 16 << 30))
+        func beat(rtt: Double, free: UInt64) throws {
+            let request = ClusterProtocol.HeartbeatRequest(protocolVersion: 1, token: host.code, id: "pc", rttMs: rtt,
+                                                           busy: false,
+                                                           devices: [ClusterProtocol.DeviceUpdate(index: 0, memoryFree: free)])
+            #expect(try post(host, "/v1/heartbeat", request).0 == 200)
+        }
+        try beat(rtt: 8, free: 12 << 30)
+
+        let redrawn = ObservedFlag()
+        withObservationTracking { _ = host.workers } onChange: { redrawn.raise() }
+        try beat(rtt: 9, free: (12 << 30) + (10 << 20))
+        #expect(!redrawn.isRaised)
+        #expect(host.workers.count == 1)
+
+        try beat(rtt: 30, free: 12 << 30)
+        #expect(redrawn.isRaised)
+        #expect(host.readyDevices().first?.latencyMs == 15)
+    }
+
+    @Test func onlyMeaningfulChangesCount() {
+        #expect(ClusterHost.changed(nil as Double?, to: 8))
+        #expect(!ClusterHost.changed(8.0, to: 9.5))
+        #expect(ClusterHost.changed(8.0, to: 30))
+        #expect(ClusterHost.changed(nil as UInt64?, to: 1))
+        #expect(!ClusterHost.changed(UInt64(12 << 30), to: (12 << 30) + (10 << 20)))
+        #expect(ClusterHost.changed(UInt64(12 << 30), to: 11 << 30))
     }
 
     @Test func lostWorkersSitOutAndLeavingIsAnnounced() throws {

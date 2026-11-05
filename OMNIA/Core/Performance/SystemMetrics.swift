@@ -166,7 +166,7 @@ enum SystemMetrics {
 
     // MARK: Storage
 
-    struct StorageStatus {
+    struct StorageStatus: Sendable {
         var total: Int64
         var availableForImportantUsage: Int64
     }

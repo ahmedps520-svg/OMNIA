@@ -91,11 +91,16 @@ final class ChatService {
 
     private var context: ModelContext { container.mainContext }
 
-    var isBusy: Bool { live != nil }
+    /// The conversation being answered. `live` changes with every token; this changes only when a
+    /// reply starts or ends, so views that just show *whether* one runs (the sidebar, menus)
+    /// don't draw again for every token.
+    private(set) var generatingConversationID: UUID?
+
+    var isBusy: Bool { generatingConversationID != nil }
 
     func isGenerating(_ conversationID: UUID?) -> Bool {
         guard let conversationID else { return false }
-        return live?.conversationID == conversationID
+        return generatingConversationID == conversationID
     }
 
     func clearError(_ conversationID: UUID) { errors[conversationID] = nil }
@@ -114,9 +119,10 @@ final class ChatService {
 
     // MARK: Conversations
 
-    func createConversation(modelID: String?) -> Conversation {
+    /// `id`: one chosen ahead, so a new chat's screen already shows this conversation.
+    func createConversation(modelID: String?, id: UUID? = nil) -> Conversation {
         let model = store.model(id: modelID) ?? defaultModel
-        let conversation = Conversation(modelID: model?.id, modelName: model?.displayName)
+        let conversation = Conversation(id: id ?? UUID(), modelID: model?.id, modelName: model?.displayName)
         context.insert(conversation)
         save()
         return conversation
@@ -139,12 +145,13 @@ final class ChatService {
 
     /// Sends a user message and streams the reply. Creates the conversation on first send.
     /// `images` holds the pictures of the `.image` attachments, by attachment ID.
+    /// `newConversationID`: the ID a new conversation gets (the new chat screen chose it).
     @discardableResult
     func send(_ text: String, attachments: [AttachmentRecord], images: [UUID: Data] = [:], in existing: Conversation?,
-              modelID: String?) -> Conversation? {
+              modelID: String?, newConversationID: UUID? = nil) -> Conversation? {
         let trimmed = text.trimmed
         guard !trimmed.isEmpty || !attachments.isEmpty else { return existing }
-        let conversation = existing ?? createConversation(modelID: modelID)
+        let conversation = existing ?? createConversation(modelID: modelID, id: newConversationID)
         guard live == nil else {
             errors[conversation.id] = InferenceError.busy.localizedDescription
             return conversation
@@ -237,6 +244,7 @@ final class ChatService {
         }
 
         live = LiveReply(conversationID: conversation.id, messageID: reply.id, prefix: prefix)
+        generatingConversationID = conversation.id
         stopRequested = false
         lastParse = .distantPast
         lastPersist = .now
@@ -259,6 +267,7 @@ final class ChatService {
             guard let conversation = self.fetchConversation(conversationID) else {
                 self.endBackgroundAnswer(success: false)
                 self.live = nil
+                self.generatingConversationID = nil
                 self.generationTask = nil
                 return
             }
@@ -382,6 +391,7 @@ final class ChatService {
         }
         endBackgroundAnswer(success: succeeded)
         live = nil
+        generatingConversationID = nil
         generationTask = nil
     }
 

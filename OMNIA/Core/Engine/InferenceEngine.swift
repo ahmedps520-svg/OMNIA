@@ -42,6 +42,9 @@ final class InferenceEngine {
     private(set) var loadingModelID: String?
     private(set) var loadProgress: Double = 0
     private(set) var live: LiveGeneration?
+    /// The model writing a reply now. `live` changes with every token; this changes only when a
+    /// reply starts or ends, so views that just show *whether* one runs don't draw per token.
+    private(set) var generatingModelName: String?
     private(set) var isBenchmarking = false
     private(set) var notice: EngineNotice?
     private(set) var lastStats: GenerationStats?
@@ -108,8 +111,8 @@ final class InferenceEngine {
     }
 
     var profile: OptimizationProfile { OptimizationProfile.resolve(device: device, preference: settings.profilePreference) }
-    var isGenerating: Bool { live != nil }
-    var isBusy: Bool { live != nil || isBenchmarking || loadingModelID != nil }
+    var isGenerating: Bool { generatingModelName != nil }
+    var isBusy: Bool { generatingModelName != nil || isBenchmarking || loadingModelID != nil }
     var loadedModels: [LoadedModel] { loaded.values.sorted { $0.lastUsed > $1.lastUsed } }
 
     func isLoaded(_ id: String) -> Bool { loaded[id] != nil }
@@ -410,6 +413,7 @@ final class InferenceEngine {
         activeBackend = backend
         live = LiveGeneration(modelID: model.id, modelName: model.displayName, startedAt: .now,
                               promptProgress: nil, generatedChunks: 0, firstTokenAt: nil)
+        generatingModelName = model.displayName
         monitor.setDetailedSampling(true)
         let upstream = backend.generate(request)
 
@@ -469,6 +473,7 @@ final class InferenceEngine {
         if let url = activeMemoryURL { conversationMemory.touch(url) }
         activeMemoryURL = nil
         live = nil
+        generatingModelName = nil
         activeBackend = nil
         monitor.setDetailedSampling(false)
     }

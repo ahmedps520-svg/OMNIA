@@ -12,7 +12,6 @@ final class ClusterHost {
         var info: ClusterProtocol.WorkerInfo
         var address: String
         var joinedAt: Date
-        var lastSeen: Date
         /// The worker's round trip to this device in milliseconds, as it measured it.
         var rttMs: Double?
         /// It holds part of a model now.
@@ -50,6 +49,9 @@ final class ClusterHost {
     @ObservationIgnored private var sweeper: Task<Void, Never>?
     @ObservationIgnored private var approved: Set<String>
     @ObservationIgnored private var declined: Set<String> = []
+    /// When each worker last checked in. Every heartbeat sets it, and nothing on screen shows it,
+    /// so it stays out of `workers`: writing it there redrew every view of the cluster each time.
+    @ObservationIgnored private var lastSeen: [String: Date] = [:]
 
     private let device: DeviceProfile
     private let defaults: UserDefaults
@@ -137,6 +139,7 @@ final class ClusterHost {
         sweeper = nil
         let endpoints = workers.map(\.endpoint)
         workers = []
+        lastSeen = [:]
         requests = []
         isRunning = false
         for endpoint in endpoints { onWorkerGone?(endpoint) }
@@ -164,6 +167,7 @@ final class ClusterHost {
         declined = []
         let endpoints = workers.map(\.endpoint)
         workers = []
+        lastSeen = [:]
         requests = []
         for endpoint in endpoints { onWorkerGone?(endpoint) }
     }
@@ -205,10 +209,15 @@ final class ClusterHost {
 
     private func sweep() {
         let now = Date()
-        let gone = workers.filter { now.timeIntervalSince($0.lastSeen) > ClusterProtocol.workerTimeout }
-        guard !gone.isEmpty || !requests.isEmpty else { return }
-        workers.removeAll { now.timeIntervalSince($0.lastSeen) > ClusterProtocol.workerTimeout }
-        requests.removeAll { now.timeIntervalSince($0.requestedAt) > 120 }
+        let silent: (Worker) -> Bool = { now.timeIntervalSince(self.lastSeen[$0.id] ?? .distantPast) > ClusterProtocol.workerTimeout }
+        let gone = workers.filter(silent)
+        let staleRequests = requests.contains { now.timeIntervalSince($0.requestedAt) > 120 }
+        guard !gone.isEmpty || staleRequests else { return }
+        if !gone.isEmpty {
+            workers.removeAll(where: silent)
+            for worker in gone { lastSeen[worker.id] = nil }
+        }
+        if staleRequests { requests.removeAll { now.timeIntervalSince($0.requestedAt) > 120 } }
         for worker in gone { onWorkerGone?(worker.endpoint) }
     }
 
@@ -321,7 +330,7 @@ final class ClusterHost {
             let previous = workers[index].endpoint
             workers[index].info = worker
             workers[index].address = address
-            workers[index].lastSeen = .now
+            lastSeen[worker.id] = .now
             workers[index].lostAt = nil
             workers[index].available = Self.offers(worker)
             if previous != workers[index].endpoint { onWorkerGone?(previous) }
@@ -344,8 +353,9 @@ final class ClusterHost {
         }
         approved.insert(worker.id)
         defaults.set(Array(approved), forKey: Self.approvedKey)
-        workers.append(Worker(id: worker.id, info: worker, address: address, joinedAt: .now, lastSeen: .now,
+        workers.append(Worker(id: worker.id, info: worker, address: address, joinedAt: .now,
                               rttMs: nil, busy: false, available: Self.offers(worker), lostAt: nil))
+        lastSeen[worker.id] = .now
         return .json(welcome)
     }
 
@@ -360,18 +370,36 @@ final class ClusterHost {
         guard let index = workers.firstIndex(where: { $0.id == message.id }) else {
             return refusal("This device isn't in the cluster; it joins again.", status: 404)
         }
-        workers[index].lastSeen = .now
-        if let rtt = message.rttMs, rtt > 0 { workers[index].rttMs = rtt }
+        lastSeen[message.id] = .now
+        // One write, and only for a change that a plan or the screen would show: round trips and
+        // free memory jitter with every heartbeat, which used to redraw every view of the cluster.
+        var updated = workers[index]
+        if let rtt = message.rttMs, rtt > 0, Self.changed(updated.rttMs, to: rtt) { updated.rttMs = rtt }
         let busy = message.busy ?? false
-        workers[index].busy = busy
+        updated.busy = busy
         // Free memory counts while it holds nothing: what's in use then is someone else's.
         if !busy, let updates = message.devices {
-            for update in updates { workers[index].available[update.index] = update.memoryFree }
+            for update in updates where Self.changed(updated.available[update.index], to: update.memoryFree) {
+                updated.available[update.index] = update.memoryFree
+            }
         }
-        if let lost = workers[index].lostAt, Date().timeIntervalSince(lost) > 30 {
-            workers[index].lostAt = nil
+        if let lost = updated.lostAt, Date().timeIntervalSince(lost) > 30 {
+            updated.lostAt = nil
         }
+        if updated != workers[index] { workers[index] = updated }
         return .json(ClusterProtocol.Reply(ok: true))
+    }
+
+    /// A round trip that moved by at least 2 ms and a quarter.
+    nonisolated static func changed(_ old: Double?, to new: Double) -> Bool {
+        guard let old else { return true }
+        return abs(new - old) >= max(2, old / 4)
+    }
+
+    /// Free memory that moved by at least 64 MB.
+    nonisolated static func changed(_ old: UInt64?, to new: UInt64) -> Bool {
+        guard let old else { return true }
+        return (new > old ? new - old : old - new) >= 64 << 20
     }
 
     private func leave(_ request: ClusterHTTPRequest) -> ClusterHTTPResponse {

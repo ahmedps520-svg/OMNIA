@@ -64,8 +64,12 @@ struct SidebarView: View {
         .searchable(text: $search, placement: .sidebar, prompt: "Search conversations")
         .searchFocused($searchFocused)
         .onChange(of: searchRequest) { searchFocused = true }
-        .onChange(of: search) { _, query in
-            searchMatches = ConversationSearch.matches(query, in: context)
+        .task(id: search) {
+            // Searching message text takes a fetch through every message: typing runs one search
+            // for the pause after it, not one per letter.
+            if !search.trimmed.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
+            guard !Task.isCancelled else { return }
+            searchMatches = ConversationSearch.matches(search, in: context)
         }
         .safeAreaInset(edge: .top, spacing: 0) { header }
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
@@ -118,9 +122,9 @@ struct SidebarView: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
-            if let live = engine.live {
+            if let name = engine.generatingModelName {
                 StatusDot(color: .accentColor, pulsing: true)
-                Text("Generating · \(live.modelName)").lineLimit(1)
+                Text("Generating · \(name)").lineLimit(1)
             } else if let loaded = engine.loadedModels.first {
                 StatusDot(color: Theme.positive)
                 Text(loaded.info.displayName).lineLimit(1)

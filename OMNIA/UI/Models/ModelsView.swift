@@ -30,16 +30,21 @@ struct ModelsView: View {
     @Environment(ModelImporter.self) private var importer
     @Environment(InferenceEngine.self) private var engine
 
-    @State private var tab: Tab = .discover
+    /// The tab chosen here last, kept while the app runs and across launches.
+    @SceneStorage("models.tab") private var chosenTab: Tab?
     @State private var showImporter = false
-    @State private var didChooseInitialTab = false
+
+    /// Chosen before the first frame (on appearing, it would first draw Recommended, then switch).
+    private var tab: Tab {
+        chosenTab ?? (store.models.isEmpty && downloads.items.isEmpty ? .discover : .installed)
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 MemoryBudgetHeader()
 
-                Picker("Section", selection: $tab) {
+                Picker("Section", selection: Binding(get: { tab }, set: { chosenTab = $0 })) {
                     ForEach(Tab.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
@@ -84,11 +89,6 @@ struct ModelsView: View {
         .navigationDestination(for: HuggingFaceRepoRoute.self) { route in
             HuggingFaceRepoView(repo: route.repo)
         }
-        .onAppear {
-            guard !didChooseInitialTab else { return }
-            didChooseInitialTab = true
-            tab = store.models.isEmpty && downloads.items.isEmpty ? .discover : .installed
-        }
     }
 
     @ViewBuilder
@@ -110,7 +110,7 @@ struct ModelsView: View {
                     message: "Download a recommended model, search Hugging Face, or import a GGUF file from the Files app. Copy GGUF files into On My iPad › OMNIA to import them without the network.",
                     symbol: "cube.transparent",
                     actionTitle: "See Recommendations",
-                    action: { tab = .discover })
+                    action: { chosenTab = .discover })
                 .frame(minHeight: 280)
             } else {
                 VStack(spacing: 10) {
@@ -160,7 +160,7 @@ struct MemoryBudgetHeader: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                if let storage = SystemMetrics.storage() {
+                if let storage = FreeStorage.shared.status {
                     VStack(alignment: .trailing, spacing: 4) {
                         Text(ByteFormat.file(storage.availableForImportantUsage)).font(.headline).monospacedDigit()
                         Text("storage free").font(.caption).foregroundStyle(.secondary)
@@ -180,6 +180,8 @@ struct MemoryBudgetHeader: View {
                 .foregroundStyle(.tertiary)
         }
         .surface()
+        // Free space changes when a model arrives or goes.
+        .task(id: store.models.count) { await FreeStorage.shared.refresh(maxAge: 0) }
     }
 }
 

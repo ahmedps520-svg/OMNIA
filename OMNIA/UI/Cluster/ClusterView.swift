@@ -482,7 +482,9 @@ struct ClusterWorkerPanel: View {
     var scan: () -> Void
     var enterCode: () -> Void
 
-    @State private var cacheSize: UInt64 = ClusterRPCServer.shared.cacheSize
+    /// Measured off the main thread: the cache holds a file per tensor, and an initial value here
+    /// would walk them all every time the panel is rebuilt.
+    @State private var cacheSize: UInt64 = 0
     private let device = AppServices.shared.device
 
     var body: some View {
@@ -530,8 +532,8 @@ struct ClusterWorkerPanel: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button("Clear") {
-                        ClusterRPCServer.shared.clearCache()
-                        cacheSize = ClusterRPCServer.shared.cacheSize
+                        cacheSize = 0
+                        Task.detached(priority: .utility) { ClusterRPCServer.shared.clearCache() }
                     }
                     .font(.caption)
                     .disabled(worker.isHolding)
@@ -539,7 +541,10 @@ struct ClusterWorkerPanel: View {
             }
         }
         .surface(padding: 20)
-        .onChange(of: worker.isHolding) { cacheSize = ClusterRPCServer.shared.cacheSize }
+        // Weights arrive while it holds a model; measure again when that starts or ends.
+        .task(id: worker.isHolding) {
+            cacheSize = await Task.detached(priority: .utility) { ClusterRPCServer.shared.cacheSize }.value
+        }
     }
 
     private var name: String { worker.clusterName ?? worker.invitation?.name ?? "the cluster" }
