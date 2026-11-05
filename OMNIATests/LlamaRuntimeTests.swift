@@ -69,6 +69,24 @@ struct LlamaRuntimeTests {
         #expect(stats.generatedTokens < 400)
     }
 
+    @Test func aReasoningBudgetEndsTheBlockAndTheReplyGoesOn() async throws {
+        let runtime = try await TestModels.load("stories260K.gguf")
+        // A reply continued inside its <think> block, with room for 4 more tokens of it.
+        var request = GenerationRequest.user("Once upon a time", maxTokens: 40)
+        request.assistantPrefix = "<think>\n"
+        request.reasoningBudget = 4
+        let budgeted = try await collect(runtime.generate(request))
+        request.reasoningBudget = nil
+        let unbounded = try await collect(runtime.generate(request))
+        await runtime.close()
+
+        #expect(budgeted.text.components(separatedBy: "</think>").count == 2, "\(budgeted.text.debugDescription)")
+        #expect(budgeted.text.contains("give the solution based on the thinking directly now"))
+        let stats = try #require(budgeted.stats)
+        #expect(stats.generatedTokens >= 4)
+        #expect(!unbounded.text.contains("</think>"))
+    }
+
     @Test func anInterruptionRecordsWhy() async throws {
         let runtime = try await TestModels.load("stories260K.gguf")
         let result = try await collect(runtime.generate(.user("Once upon a time", maxTokens: 400))) { chunks in

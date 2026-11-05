@@ -5,11 +5,32 @@ import SwiftUI
 struct ToolStepsView: View {
     let steps: [ToolStep]
     var running: String?
+    /// A call the model is still writing.
+    var composing: PendingToolCall?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(steps) { step in
                 ToolStepRow(step: step)
+            }
+            if let composing {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.mini)
+                        Text("Writing \(composing.name.map { "a \($0) call" } ?? "a tool call") · \(composing.text.count.formatted()) characters so far")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    let preview = composing.preview
+                    if !preview.isEmpty {
+                        Text(preview)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(4)
+                            .truncationMode(.head)
+                    }
+                }
+                .accessibilityElement(children: .combine)
             }
             if let running {
                 HStack(spacing: 8) {

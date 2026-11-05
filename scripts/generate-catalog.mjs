@@ -11,6 +11,8 @@ const defaultPeriod = { gemma2: 2, gemma3: 6, gemma3n: 5, cohere2: 4, 'gpt-oss':
 const meta = {
   'qwen3.8-27b': { q: 92, released: 'August 2026', tags: ['Reasoning', 'Hybrid attention'],
     summary: "Qwen's strongest small model and the most capable in this catalog. Its hybrid Gated DeltaNet design keeps the KV cache tiny for long contexts; it thinks before answering by default." },
+  'qwen3.5-122b-a10b': { q: 91, released: 'February 2026', tags: ['Reasoning', 'Mixture of experts', 'Cluster'],
+    summary: "Qwen's 122B mixture of experts with about 10B parameters active per token: far more knowledge than the 35B models. Too big for any one device, it runs on a cluster with GPU PCs; it thinks before answering by default." },
   'ornith-1.5-35b-a3b': { q: 89, released: 'August 2026', tags: ['Reasoning', 'Mixture of experts'],
     summary: 'Qwen3.6-architecture mixture of experts refined with reinforcement learning. Very strong reasoning and coding scores with only about 3B parameters active per token.' },
   'qwen3.6-35b-a3b': { q: 87, released: 'April 2026', tags: ['Reasoning', 'Mixture of experts'],

@@ -27,6 +27,7 @@ final class ChatService {
         var chunks = 0
         /// Tools offered for this reply; their call markup is hidden from the text.
         var toolsActive = false
+        var toolNames: [String] = []
         /// Tool calls completed so far, and the tool running now ("Calculating").
         var steps: [ToolStep] = []
         var runningTool: String?
@@ -35,6 +36,13 @@ final class ChatService {
 
         var displayContent: String {
             prefix + (toolsActive ? ToolCallParser.visibleText(parsed.content, streaming: true) : parsed.content)
+        }
+
+        /// The tool call the model is writing now. Its markup is hidden from the reply, so without
+        /// this a long call (code to run, say) would look like a reply that stopped.
+        var composingCall: PendingToolCall? {
+            guard toolsActive, runningTool == nil else { return nil }
+            return ToolCallParser.pendingCall(in: parsed.content, tools: toolNames)
         }
     }
 
@@ -257,6 +265,7 @@ final class ChatService {
             let prepared = self.makeRequest(for: conversation, reply: reply, model: model, prefix: prefix,
                                             queryVector: queryVector)
             self.live?.toolsActive = !prepared.tools.isEmpty
+            self.live?.toolNames = prepared.tools.map { $0.definition.name }
             await self.run(model: model, request: prepared.request, tools: prepared.tools, conversationID: conversationID,
                            reply: reply, prefix: prefix)
         }
@@ -286,6 +295,9 @@ final class ChatService {
             request.templateVariables = reasoning.templateVariables(effort: settings.reasoningEffort)
         }
         if conversation.jsonMode { request.responseFormat = .json }
+        // Templates without effort levels (Qwen3.5 and 3.6, Ornith) let the model think as long as
+        // it likes; the runtime ends such a block at this many tokens.
+        request.reasoningBudget = settings.reasoningEffort.thinkingBudget
         let tools = prefix.isEmpty ? offered : []
         request.tools = tools.map { $0.definition }
         request.memoryKey = conversation.id

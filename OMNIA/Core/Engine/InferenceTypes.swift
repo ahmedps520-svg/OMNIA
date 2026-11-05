@@ -107,6 +107,9 @@ struct GenerationRequest: Sendable {
     var memory: ConversationMemoryRequest?
     /// Use the attached draft model, if any (speculative decoding).
     var speculative: Bool = true
+    /// Most tokens a `<think>` block may take before OMNIA ends it (see `ReasoningBudget`); only
+    /// for templates that take no effort level of their own. Nil for no limit.
+    var reasoningBudget: Int?
 }
 
 /// The shape of a reply.

@@ -130,6 +130,21 @@ enum ToolCallFormat: String, Codable, Sendable, CaseIterable {
                                "<|tool_call_start|>", "<atem:function_calls>"]
 }
 
+/// A tool call the model is still writing.
+struct PendingToolCall: Equatable, Sendable {
+    /// The tool it calls, once the model has written the name.
+    var name: String?
+    /// Everything written since the call began, markup included.
+    var text: String
+
+    /// The end of the call so far, from the start of a line: what the model is writing now.
+    var preview: String {
+        let tail = text.suffix(280)
+        let fromLine = tail.firstIndex(of: "\n").map { tail[tail.index(after: $0)...] } ?? tail
+        return String(fromLine.isEmpty ? tail : fromLine).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 // MARK: - Parsing
 
 enum ToolCallParser {
@@ -148,6 +163,29 @@ enum ToolCallParser {
     /// The reply text before any tool-call markup.
     static func preface(of text: String) -> String {
         visibleText(text, streaming: false).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The tool call being written at the end of `text`, if the reply has reached one: the text
+    /// from its first marker on, and which of `tools` it calls once the name is written. Its markup
+    /// is hidden from the reply (`visibleText`), so this is what shows the model is still working.
+    static func pendingCall(in text: String, tools: [String]) -> PendingToolCall? {
+        var start: String.Index?
+        for marker in ToolCallFormat.startMarkers {
+            if let range = text.range(of: marker), start.map({ range.lowerBound < $0 }) ?? true {
+                start = range.lowerBound
+            }
+        }
+        guard let start else { return nil }
+        let call = String(text[start...])
+        var name: String?
+        var earliest = call.endIndex
+        for tool in tools where !tool.isEmpty {
+            if let range = call.range(of: tool), range.lowerBound < earliest {
+                earliest = range.lowerBound
+                name = tool
+            }
+        }
+        return PendingToolCall(name: name, text: call)
     }
 
     /// The reply as shown while tools are active: tool-call markup is hidden (the calls appear as

@@ -18,6 +18,9 @@ struct UTF8StreamDecoder {
         return text
     }
 
+    /// No bytes of an unfinished character are waiting.
+    var isEmpty: Bool { pending.isEmpty }
+
     /// Emits whatever is left (invalid trailing bytes become U+FFFD).
     mutating func flush() -> String {
         defer { pending.removeAll() }

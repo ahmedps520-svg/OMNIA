@@ -36,6 +36,29 @@ extension ModelCatalog {
                                         sizeBytes: 629_247_008, sha256: "2e968a6af97ce35d8971890b257b9b7edabf20ad91450501fa53162a19ee33eb")
         ),
         CatalogModel(
+            id: "qwen3.5-122b-a10b",
+            name: "Qwen3.5 122B-A10B",
+            developer: "Qwen (Alibaba)",
+            repo: "unsloth/Qwen3.5-122B-A10B-GGUF",
+            license: "Apache 2.0",
+            released: "February 2026",
+            summary: "Qwen's 122B mixture of experts with about 10B parameters active per token: far more knowledge than the 35B models. Too big for any one device, it runs on a cluster with GPU PCs; it thinks before answering by default.",
+            qualityScore: 91,
+            tags: ["Reasoning", "Mixture of experts", "Cluster"],
+            facts: ArchitectureFacts(
+                architecture: "qwen35moe", layers: 48, kvElementsFull: 12_288, kvElementsSliding: 0,
+                slidingWindow: 0, kvLoraRank: 0, recurrentStateBytes: 156_303_360,
+                embeddingLength: 3_072, vocabSize: 248_320, trainContext: 262_144,
+                parameters: 122, activeParameters: 10, thinkingToggle: true),
+            variants: [
+                CatalogVariant(quant: "UD-IQ2_XXS", fileName: "Qwen3.5-122B-A10B-UD-IQ2_XXS.gguf", sizeBytes: 36_637_668_544, sha256: "3a67140a6be1e51716ef28d32f52e3190295557c3ed04c8444a3a38eb82b756c"),
+                CatalogVariant(quant: "UD-IQ2_M", fileName: "Qwen3.5-122B-A10B-UD-IQ2_M.gguf", sizeBytes: 39_148_942_528, sha256: "5466fa1ac7d2dc7c213db5f3030190af5a7107ca85e9ab28b39fe7cd9c97446e"),
+                CatalogVariant(quant: "UD-Q2_K_XL", fileName: "Qwen3.5-122B-A10B-UD-Q2_K_XL.gguf", sizeBytes: 41_845_347_520, sha256: "be44a62acb10d79f501d75ef3faee0219b50b305352f3db4bad13f76591121bd")
+            ],
+            projector: CatalogProjector(repo: "unsloth/Qwen3.5-122B-A10B-GGUF", fileName: "mmproj-F16.gguf",
+                                        sizeBytes: 908_724_960, sha256: "691af71bd41d437ce4a1d989f589c4b492237d702b33819ed8f897f9fae6e725")
+        ),
+        CatalogModel(
             id: "qwen3.6-35b-a3b",
             name: "Qwen3.6 35B-A3B",
             developer: "Qwen (Alibaba)",
@@ -54,7 +77,14 @@ extension ModelCatalog {
                 CatalogVariant(quant: "UD-IQ2_XXS", fileName: "Qwen3.6-35B-A3B-UD-IQ2_XXS.gguf", sizeBytes: 10_756_586_464, sha256: "2e8f5f705355c56311432d0a8a5d14a696dbb7e4b197d05c75ba805fc1857bef"),
                 CatalogVariant(quant: "UD-IQ2_M", fileName: "Qwen3.6-35B-A3B-UD-IQ2_M.gguf", sizeBytes: 11_522_702_304, sha256: "2be7ef1ed7e1af8b10d3829102cf9a6c2bd5ddb64d675b4ece23a60799403d43"),
                 CatalogVariant(quant: "UD-Q2_K_XL", fileName: "Qwen3.6-35B-A3B-UD-Q2_K_XL.gguf", sizeBytes: 12_290_628_576, sha256: "96b9c0af5c77a4ecaabe3983175112b5ece763261c1ece12b2494b692a70dad7"),
-                CatalogVariant(quant: "UD-IQ3_XXS", fileName: "Qwen3.6-35B-A3B-UD-IQ3_XXS.gguf", sizeBytes: 13_211_155_424, sha256: "9c964e657212fea1f24905dd7b0a89b82fd807d19fab0b41da14251b07b88fbe")
+                CatalogVariant(quant: "UD-IQ3_XXS", fileName: "Qwen3.6-35B-A3B-UD-IQ3_XXS.gguf", sizeBytes: 13_211_155_424, sha256: "9c964e657212fea1f24905dd7b0a89b82fd807d19fab0b41da14251b07b88fbe"),
+                CatalogVariant(quant: "UD-Q3_K_M", fileName: "Qwen3.6-35B-A3B-UD-Q3_K_M.gguf", sizeBytes: 16_600_710_112, sha256: "1b715841683f960bd9a49f008181bd910ee169b78d4cf465b6fde7f4d929ff99"),
+                CatalogVariant(quant: "UD-IQ4_XS", fileName: "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", sizeBytes: 17_730_509_792, sha256: "649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3"),
+                CatalogVariant(quant: "MXFP4_MOE", fileName: "Qwen3.6-35B-A3B-MXFP4_MOE.gguf", sizeBytes: 21_706_144_736, sha256: "2fdd20997c4d88ee25f70f500c61f8b999378d92ab055f9d450fc70d617158d3"),
+                CatalogVariant(quant: "UD-Q4_K_M", fileName: "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf", sizeBytes: 22_134_528_992, sha256: "ac0e2c1189e055faa36eff361580e79c5bd6f8e76bffb4ce547f167d53e31a61"),
+                CatalogVariant(quant: "UD-Q5_K_M", fileName: "Qwen3.6-35B-A3B-UD-Q5_K_M.gguf", sizeBytes: 26_456_194_016, sha256: "c13ce26253ea334df472bd8fbd2d6da66d8a41195c17f6fcbf44c4d20ece0932"),
+                CatalogVariant(quant: "UD-Q6_K", fileName: "Qwen3.6-35B-A3B-UD-Q6_K.gguf", sizeBytes: 29_308_320_736, sha256: "4fe53b148b46f9b88830e2a3055c5b15c3a4d1e3ddc9a1384a108d8b9d59f043"),
+                CatalogVariant(quant: "Q8_0", fileName: "Qwen3.6-35B-A3B-Q8_0.gguf", sizeBytes: 36_903_140_320, sha256: "d1a395809f65a43a13ad119eb4e7acdef1ac6d68120f39902c8ab96e72794a59")
             ],
             projector: CatalogProjector(repo: "ggml-org/Qwen3.6-35B-A3B-GGUF", fileName: "mmproj-Qwen3.6-35B-A3B-Q8_0.gguf",
                                         sizeBytes: 614_194_304, sha256: "904cbf8c8e876220066ab3bf676c7efa40f3da372276fdaf8b01d2fb2a37a51d")
@@ -77,7 +107,13 @@ extension ModelCatalog {
             variants: [
                 CatalogVariant(quant: "IQ2_XXS", fileName: "Ornith-1.5-35B-A3B-IQ2_XXS.gguf", sizeBytes: 10_255_140_512, sha256: "14963c6830ae8287ad42a53c0fd87ca9fc67a8de8da1d18e3a076a348e96a32f"),
                 CatalogVariant(quant: "IQ2_S", fileName: "Ornith-1.5-35B-A3B-IQ2_S.gguf", sizeBytes: 11_486_963_360, sha256: "49b923ebe5f4d4a4384ccb86dd2b93effacc96ec1a3054a0192cc61dc045ebab"),
-                CatalogVariant(quant: "IQ2_M", fileName: "Ornith-1.5-35B-A3B-IQ2_M.gguf", sizeBytes: 12_543_403_680, sha256: "be92ed1eb2da35876e91a5551c527ddcce450d49ec53aba92f03e26adba7b996")
+                CatalogVariant(quant: "IQ2_M", fileName: "Ornith-1.5-35B-A3B-IQ2_M.gguf", sizeBytes: 12_543_403_680, sha256: "be92ed1eb2da35876e91a5551c527ddcce450d49ec53aba92f03e26adba7b996"),
+                CatalogVariant(quant: "IQ3_XXS", fileName: "Ornith-1.5-35B-A3B-IQ3_XXS.gguf", sizeBytes: 15_340_447_392, sha256: "8918ccb9ee29abe3875efec0c3e86f0e35ef0b8a03e3f0e1c422869859a518d0"),
+                CatalogVariant(quant: "IQ4_XS", fileName: "Ornith-1.5-35B-A3B-IQ4_XS.gguf", sizeBytes: 19_278_554_784, sha256: "d6aef57fa948e9bba3ca4959b3c237ed898c605471f48c73a32cedbd24aabe70"),
+                CatalogVariant(quant: "Q4_K_M", fileName: "Ornith-1.5-35B-A3B-Q4_K_M.gguf", sizeBytes: 21_864_081_056, sha256: "12d8d5c01bae7f23ea4822b2f96ba069d531f827d02a57c31002f2f95e72614a"),
+                CatalogVariant(quant: "Q5_K_M", fileName: "Ornith-1.5-35B-A3B-Q5_K_M.gguf", sizeBytes: 25_492_186_784, sha256: "b2c923d76a2d6e405d6563a62f7636f4ec4709387cacb0a80e036a1723d1078b"),
+                CatalogVariant(quant: "Q6_K", fileName: "Ornith-1.5-35B-A3B-Q6_K.gguf", sizeBytes: 30_526_310_048, sha256: "16bd0aa47a906697af9992dcca6b27ce2e95a0f8bf9f1d6b19cdc0c67d85a6cb"),
+                CatalogVariant(quant: "Q8_0", fileName: "Ornith-1.5-35B-A3B-Q8_0.gguf", sizeBytes: 37_813_700_256, sha256: "885ea08ab462efb8f2fb40ba95ca90085b1eec47628c24c4bdd8e7fbff83e7fd")
             ],
             projector: CatalogProjector(repo: "bartowski/Ornith-1.5-35B-A3B-GGUF", fileName: "mmproj-Ornith-1.5-35B-A3B-f16.gguf",
                                         sizeBytes: 899_283_296, sha256: "815c9a671991aceeef46ca1aa103b64499db8cfadf21c83005a20ed839d53c7c")

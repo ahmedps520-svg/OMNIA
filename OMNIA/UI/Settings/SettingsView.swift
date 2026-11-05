@@ -86,7 +86,7 @@ struct SettingsView: View {
             } header: {
                 Text("Inference")
             } footer: {
-                Text("Context and KV cache changes apply the next time a model loads. Automatic picks the longest context and highest cache precision that fit in memory; quantized caches require flash attention. Remember long chats saves a long conversation's model memory, so reopening it continues instantly instead of re-reading it. Tools let models calculate exactly, check the date, run code in a sandbox and search attached documents. Reasoning effort sets how long reasoning models think before answering: Balanced suits most questions, Thorough is slower and uses more battery.")
+                Text("Context and KV cache changes apply the next time a model loads. Automatic picks the longest context and highest cache precision that fit in memory; quantized caches require flash attention. Remember long chats saves a long conversation's model memory, so reopening it continues instantly instead of re-reading it. Tools let models calculate exactly, check the date, run code in a sandbox and search attached documents. Reasoning effort sets how long reasoning models think before answering: Balanced suits most questions, Thorough is slower and uses more battery. Models that can't be told an effort level (Qwen3.6, Ornith) stop thinking after about 1,000 tokens on Light and 4,000 on Balanced, then answer; Thorough lets them think as long as they want.")
             }
 
             // MARK: Workspace

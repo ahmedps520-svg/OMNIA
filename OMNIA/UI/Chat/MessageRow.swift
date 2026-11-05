@@ -168,8 +168,8 @@ struct AssistantMessageView: View {
                                     duration: thinkingDuration)
             }
 
-            if !steps.isEmpty || live?.runningTool != nil {
-                ToolStepsView(steps: steps, running: live?.runningTool)
+            if !steps.isEmpty || live?.runningTool != nil || live?.composingCall != nil {
+                ToolStepsView(steps: steps, running: live?.runningTool, composing: live?.composingCall)
             }
 
             if !content.isEmpty {
@@ -184,6 +184,12 @@ struct AssistantMessageView: View {
 
             if !isStreaming {
                 footer
+            } else if let live, live.chunks > 1, let first = live.firstTokenAt {
+                // How fast the reply is coming, while it comes (reasoning and tool calls included).
+                let elapsed = max(Date().timeIntervalSince(first), 0.001)
+                Text("\(live.chunks) tokens · \(ByteFormat.rate(Double(live.chunks - 1) / elapsed))")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tertiary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

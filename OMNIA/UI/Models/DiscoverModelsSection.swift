@@ -19,7 +19,11 @@ struct DiscoverModelsSection: View {
             (model: model, best: ModelCatalog.bestVariant(of: model, device: device, profile: profile, budget: budget))
         }
         let fitting = assessed.filter { $0.best != nil }.sorted { $0.model.qualityScore > $1.model.qualityScore }
-        let tooLarge = assessed.filter { $0.best == nil }
+        let beyondDevice = assessed.filter { $0.best == nil }
+        let clusterFits = Self.clusterFits(beyondDevice.map(\.model), engine: engine, budget: budget)
+        let onCluster = beyondDevice.filter { clusterFits[$0.model.id] != nil }
+            .sorted { $0.model.qualityScore > $1.model.qualityScore }
+        let tooLarge = beyondDevice.filter { clusterFits[$0.model.id] == nil }
 
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 12) {
@@ -64,6 +68,20 @@ struct DiscoverModelsSection: View {
                 }
             }
 
+            if !onCluster.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionHeader("Runs on your cluster", subtitle: "Too large for \(device.name) alone, these fit across the devices in your cluster right now. Each row names the largest version that fits.")
+                    LazyVStack(spacing: 10) {
+                        ForEach(onCluster, id: \.model.id) { entry in
+                            NavigationLink(value: entry.model) {
+                                CatalogModelRow(model: entry.model, best: nil, clusterVariant: clusterFits[entry.model.id])
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+
             if !tooLarge.isEmpty {
                 DisclosureGroup(isExpanded: $showIncompatible) {
                     LazyVStack(spacing: 10) {
@@ -81,11 +99,34 @@ struct DiscoverModelsSection: View {
             }
         }
     }
+
+    /// For models too large for this device: the largest version the cluster hosted here can run
+    /// now, by model ID. Empty without workers.
+    @MainActor
+    private static func clusterFits(_ models: [CatalogModel], engine: InferenceEngine,
+                                    budget: MemoryBudget) -> [String: CatalogVariant] {
+        guard let devices = engine.clusterDevices?(), !devices.isEmpty else { return [:] }
+        // Memory of every device together: a quick bound before planning.
+        let pooled = devices.reduce(budget.allowance.resident) { $0 + $1.memoryBudget }
+        var fits: [String: CatalogVariant] = [:]
+        for model in models {
+            for variant in model.variants.sorted(by: { $0.sizeBytes > $1.sizeBytes })
+            where !variant.isMLX && UInt64(variant.sizeBytes) < pooled {
+                if engine.clusterPlan(facts: model.facts, fileSize: UInt64(variant.sizeBytes), budget: budget) != nil {
+                    fits[model.id] = variant
+                    break
+                }
+            }
+        }
+        return fits
+    }
 }
 
 struct CatalogModelRow: View {
     let model: CatalogModel
     let best: (CatalogVariant, VariantAssessment)?
+    /// For a model too large for this device: the largest version the cluster can run.
+    var clusterVariant: CatalogVariant? = nil
 
     @Environment(ModelStore.self) private var store
 
@@ -121,6 +162,10 @@ struct CatalogModelRow: View {
                         .font(.caption).foregroundStyle(.secondary)
                     Text("≈ \(Int(best.1.estimatedTokensPerSecond)) tok/s · \(ByteFormat.memory(best.1.plan.estimate.total))")
                         .font(.caption2).foregroundStyle(.tertiary)
+                } else if let clusterVariant {
+                    Pill(text: "Runs on your cluster", symbol: "point.3.connected.trianglepath.dotted", tint: Theme.positive)
+                    Text("Up to \(clusterVariant.quant) · \(ByteFormat.file(clusterVariant.sizeBytes))")
+                        .font(.caption).foregroundStyle(.secondary)
                 } else {
                     CompatibilityBadge(compatibility: .tooLarge)
                     if let smallest = model.variants.min(by: { $0.sizeBytes < $1.sizeBytes }) {

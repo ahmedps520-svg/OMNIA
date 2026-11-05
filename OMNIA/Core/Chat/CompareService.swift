@@ -106,6 +106,7 @@ final class CompareService {
             }
             request.templateVariables = reasoning.templateVariables(effort: settings.reasoningEffort)
         }
+        request.reasoningBudget = settings.reasoningEffort.thinkingBudget
         // Comparisons start from a clean cache so prompt timings are fair.
         request.reusePromptCache = false
         do {

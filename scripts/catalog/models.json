@@ -68,6 +68,44 @@
     }
   },
   {
+    "id": "qwen3.5-122b-a10b",
+    "name": "Qwen3.5 122B-A10B",
+    "developer": "Qwen (Alibaba)",
+    "repo": "unsloth/Qwen3.5-122B-A10B-GGUF",
+    "architecture": "qwen35moe",
+    "params_total_b": 122,
+    "params_active_b": 10,
+    "context": 262144,
+    "license": "apache-2.0",
+    "notes": "Released Feb 24 2026 (Apache 2.0, not gated; ~946K downloads/month of the original). Qwen3.5 hybrid MoE (Gated DeltaNet + gated attention, 48 layers, 3072 wide, 256 experts, 8 routed, ~10B active) with vision encoder. THINKING model (enable_thinking). llama.cpp arch qwen35moe (b7990+). For clusters only: the smallest single-file quants (36.6-41.9GB) need an iPad, iPhones and two GPU PCs together. Larger unsloth quants (UD-IQ3_XXS 44.75GB and up) don't fit such a cluster; UD-Q3_K_XL and up are split into several files, which OMNIA doesn't download. Ornith-1.5-122B (unsloth, 407K downloads) is an RL-refined variant, but its GGUFs include an MTP layer (49 blocks) and start at 40.36GB (UD-IQ1_M). The image encoder is unsloth's mmproj-F16 (no Q8_0 from ggml-org).",
+    "files": [
+      {
+        "quant": "UD-IQ2_XXS",
+        "filename": "Qwen3.5-122B-A10B-UD-IQ2_XXS.gguf",
+        "size": 36637668544,
+        "sha256": "3a67140a6be1e51716ef28d32f52e3190295557c3ed04c8444a3a38eb82b756c"
+      },
+      {
+        "quant": "UD-IQ2_M",
+        "filename": "Qwen3.5-122B-A10B-UD-IQ2_M.gguf",
+        "size": 39148942528,
+        "sha256": "5466fa1ac7d2dc7c213db5f3030190af5a7107ca85e9ab28b39fe7cd9c97446e"
+      },
+      {
+        "quant": "UD-Q2_K_XL",
+        "filename": "Qwen3.5-122B-A10B-UD-Q2_K_XL.gguf",
+        "size": 41845347520,
+        "sha256": "be44a62acb10d79f501d75ef3faee0219b50b305352f3db4bad13f76591121bd"
+      }
+    ],
+    "projector": {
+      "repo": "unsloth/Qwen3.5-122B-A10B-GGUF",
+      "filename": "mmproj-F16.gguf",
+      "size": 908724960,
+      "sha256": "691af71bd41d437ce4a1d989f589c4b492237d702b33819ed8f897f9fae6e725"
+    }
+  },
+  {
     "id": "qwen3.6-35b-a3b",
     "name": "Qwen3.6 35B-A3B",
     "developer": "Qwen (Alibaba)",
@@ -77,7 +115,7 @@
     "params_active_b": 3,
     "context": 262144,
     "license": "apache-2.0",
-    "notes": "Released Apr 2026. MoE (256 experts, 8 routed + 1 shared, ~3B active) with vision encoder; very fast decode for its quality (GPQA-Diamond 86.0, SWE-bench Verified 73.4 as listed in Ornith's comparison table). THINKING model: on by default (enable_thinking=false to disable; preserve_thinking supported); embedded Jinja template required. llama.cpp arch qwen35moe since b7990 (Feb 10 2026). Only ~2-3-bit unsloth dynamic quants fit under 13.5GB, so 16GB iPad only. Unsloth template modified vs original; no MTP layers. Alternative: bartowski/Qwen_Qwen3.6-35B-A3B-GGUF (original template + MTP; IQ2_M 12.96GB). See also ornith-1.5-35b-a3b (same architecture, stronger vendor scores). Requested quant types not published in this repo: Q4_0, IQ3_M, Q3_K_L. Omitted as >13.5GB: UD-Q4_K_M 22.13GB, UD-Q5_K_M 26.46GB, UD-Q6_K 29.31GB, Q8_0 36.90GB, UD-IQ4_XS 17.73GB, MXFP4_MOE 21.71GB, UD-Q3_K_M 16.60GB.",
+    "notes": "Released Apr 2026. MoE (256 experts, 8 routed + 1 shared, ~3B active) with vision encoder; very fast decode for its quality (GPQA-Diamond 86.0, SWE-bench Verified 73.4 as listed in Ornith's comparison table). THINKING model: on by default (enable_thinking=false to disable; preserve_thinking supported); embedded Jinja template required. llama.cpp arch qwen35moe since b7990 (Feb 10 2026). Only ~2-3-bit unsloth dynamic quants fit under 13.5GB, so 16GB iPad only. Unsloth template modified vs original; no MTP layers. Alternative: bartowski/Qwen_Qwen3.6-35B-A3B-GGUF (original template + MTP; IQ2_M 12.96GB). See also ornith-1.5-35b-a3b (same architecture, stronger vendor scores). Requested quant types not published in this repo: Q4_0, IQ3_M, Q3_K_L. Variants from UD-Q3_K_M (16.60GB) up to Q8_0 (36.90GB) were added on 2026-11-05 for clusters: they don't fit on one device.",
     "files": [
       {
         "quant": "UD-IQ2_XXS",
@@ -102,6 +140,48 @@
         "filename": "Qwen3.6-35B-A3B-UD-IQ3_XXS.gguf",
         "size": 13211155424,
         "sha256": "9c964e657212fea1f24905dd7b0a89b82fd807d19fab0b41da14251b07b88fbe"
+      },
+      {
+        "quant": "UD-Q3_K_M",
+        "filename": "Qwen3.6-35B-A3B-UD-Q3_K_M.gguf",
+        "size": 16600710112,
+        "sha256": "1b715841683f960bd9a49f008181bd910ee169b78d4cf465b6fde7f4d929ff99"
+      },
+      {
+        "quant": "UD-IQ4_XS",
+        "filename": "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+        "size": 17730509792,
+        "sha256": "649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3"
+      },
+      {
+        "quant": "MXFP4_MOE",
+        "filename": "Qwen3.6-35B-A3B-MXFP4_MOE.gguf",
+        "size": 21706144736,
+        "sha256": "2fdd20997c4d88ee25f70f500c61f8b999378d92ab055f9d450fc70d617158d3"
+      },
+      {
+        "quant": "UD-Q4_K_M",
+        "filename": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+        "size": 22134528992,
+        "sha256": "ac0e2c1189e055faa36eff361580e79c5bd6f8e76bffb4ce547f167d53e31a61"
+      },
+      {
+        "quant": "UD-Q5_K_M",
+        "filename": "Qwen3.6-35B-A3B-UD-Q5_K_M.gguf",
+        "size": 26456194016,
+        "sha256": "c13ce26253ea334df472bd8fbd2d6da66d8a41195c17f6fcbf44c4d20ece0932"
+      },
+      {
+        "quant": "UD-Q6_K",
+        "filename": "Qwen3.6-35B-A3B-UD-Q6_K.gguf",
+        "size": 29308320736,
+        "sha256": "4fe53b148b46f9b88830e2a3055c5b15c3a4d1e3ddc9a1384a108d8b9d59f043"
+      },
+      {
+        "quant": "Q8_0",
+        "filename": "Qwen3.6-35B-A3B-Q8_0.gguf",
+        "size": 36903140320,
+        "sha256": "d1a395809f65a43a13ad119eb4e7acdef1ac6d68120f39902c8ab96e72794a59"
       }
     ],
     "projector": {
@@ -121,7 +201,7 @@
     "params_active_b": 3,
     "context": 262144,
     "license": "mit",
-    "notes": "Released Aug 18 2026. Qwen3.6-35B-A3B-architecture MoE (~3B active, vision encoder included) further trained with Ornith's self-improving RL loop. Ornith's table vs Qwen3.6-35B-A3B: GPQA-Diamond 89.2 vs 86.0, SWE-bench Verified 79.0 vs 73.4, Terminal-Bench 2.1 67.8 vs 52.5, but MMLU-Pro 80.8 vs 82.7. ~4M GGUF downloads/month for the official repo. THINKING model (<think> by default). Context 262,144. llama.cpp arch qwen35moe (b7990+). The official ornith-ai/Ornith-1.5-35B-A3B-GGUF only publishes Q4_K_M (21.71GB) and larger, so bartowski supplies the 2-bit sizes; caveat: bartowski embeds the stock Qwen template, while the official GGUF embeds Ornith's modified template (Unsloth-style developer-role/tool-call fixes, merged system messages, reasoning kept in history) - consider overriding with it. Only ~2-bit fits: 16GB iPad only. Omitted as >13.5GB: Q4_K_M 21.86GB, Q5_K_M 25.49GB, Q6_K 30.53GB, Q8_0 37.81GB, IQ4_XS 19.28GB, Q4_0 20.42GB, IQ3_XXS 15.34GB, IQ3_M 17.37GB, Q3_K_M 16.70GB, Q3_K_L 17.36GB.",
+    "notes": "Released Aug 18 2026. Qwen3.6-35B-A3B-architecture MoE (~3B active, vision encoder included) further trained with Ornith's self-improving RL loop. Ornith's table vs Qwen3.6-35B-A3B: GPQA-Diamond 89.2 vs 86.0, SWE-bench Verified 79.0 vs 73.4, Terminal-Bench 2.1 67.8 vs 52.5, but MMLU-Pro 80.8 vs 82.7. ~4M GGUF downloads/month for the official repo. THINKING model (<think> by default). Context 262,144. llama.cpp arch qwen35moe (b7990+). The official ornith-ai/Ornith-1.5-35B-A3B-GGUF only publishes Q4_K_M (21.71GB) and larger, so bartowski supplies the 2-bit sizes; caveat: bartowski embeds the stock Qwen template, while the official GGUF embeds Ornith's modified template (Unsloth-style developer-role/tool-call fixes, merged system messages, reasoning kept in history) - consider overriding with it. Only ~2-bit fits: 16GB iPad only. IQ3_XXS (15.34GB) to Q8_0 (37.81GB) were added on 2026-11-05 for clusters. Not listed: Q4_0 20.42GB, IQ3_M 17.37GB, Q3_K_M 16.70GB, Q3_K_L 17.36GB.",
     "files": [
       {
         "quant": "IQ2_XXS",
@@ -140,6 +220,42 @@
         "filename": "Ornith-1.5-35B-A3B-IQ2_M.gguf",
         "size": 12543403680,
         "sha256": "be92ed1eb2da35876e91a5551c527ddcce450d49ec53aba92f03e26adba7b996"
+      },
+      {
+        "quant": "IQ3_XXS",
+        "filename": "Ornith-1.5-35B-A3B-IQ3_XXS.gguf",
+        "size": 15340447392,
+        "sha256": "8918ccb9ee29abe3875efec0c3e86f0e35ef0b8a03e3f0e1c422869859a518d0"
+      },
+      {
+        "quant": "IQ4_XS",
+        "filename": "Ornith-1.5-35B-A3B-IQ4_XS.gguf",
+        "size": 19278554784,
+        "sha256": "d6aef57fa948e9bba3ca4959b3c237ed898c605471f48c73a32cedbd24aabe70"
+      },
+      {
+        "quant": "Q4_K_M",
+        "filename": "Ornith-1.5-35B-A3B-Q4_K_M.gguf",
+        "size": 21864081056,
+        "sha256": "12d8d5c01bae7f23ea4822b2f96ba069d531f827d02a57c31002f2f95e72614a"
+      },
+      {
+        "quant": "Q5_K_M",
+        "filename": "Ornith-1.5-35B-A3B-Q5_K_M.gguf",
+        "size": 25492186784,
+        "sha256": "b2c923d76a2d6e405d6563a62f7636f4ec4709387cacb0a80e036a1723d1078b"
+      },
+      {
+        "quant": "Q6_K",
+        "filename": "Ornith-1.5-35B-A3B-Q6_K.gguf",
+        "size": 30526310048,
+        "sha256": "16bd0aa47a906697af9992dcca6b27ce2e95a0f8bf9f1d6b19cdc0c67d85a6cb"
+      },
+      {
+        "quant": "Q8_0",
+        "filename": "Ornith-1.5-35B-A3B-Q8_0.gguf",
+        "size": 37813700256,
+        "sha256": "885ea08ab462efb8f2fb40ba95ca90085b1eec47628c24c4bdd8e7fbff83e7fd"
       }
     ],
     "projector": {

@@ -29,6 +29,7 @@ final class BackgroundAnswer {
     private var completed = false
     private var doneUnits: Int64 = 0
     private var subtitleUpdated = Date.distantPast
+    private var firstTokenAt: Date?
 
     private init(title: String, modelName: String, maxTokens: Int, onExpiration: @escaping () -> Void) {
         self.title = title
@@ -75,9 +76,14 @@ final class BackgroundAnswer {
         setProgress(Int64(Double(Self.promptUnits) * min(max(fraction, 0), 1)), subtitle: "Reading the conversation · \(modelName)")
     }
 
-    /// Writing the reply: `tokens` so far.
+    /// Writing the reply: `tokens` so far, and how fast they come.
     func wrote(_ tokens: Int) {
-        setProgress(Self.promptUnits + Int64(tokens), subtitle: "\(tokens) tokens · \(modelName)")
+        let now = Date()
+        let first = firstTokenAt ?? now
+        firstTokenAt = first
+        let elapsed = now.timeIntervalSince(first)
+        let speed = tokens > 1 && elapsed >= 1 ? " · \(ByteFormat.rate(Double(tokens - 1) / elapsed))" : ""
+        setProgress(Self.promptUnits + Int64(tokens), subtitle: "\(tokens) tokens\(speed) · \(modelName)")
     }
 
     /// The reply ended (done, stopped or failed); the task completes and iOS takes back the GPU.

@@ -34,6 +34,9 @@ final class LlamaRuntime: @unchecked Sendable {
     /// Recurrent and hybrid caches can't be trimmed back to a shared prefix, so a saved state
     /// would rarely be reusable; only attention-only models save conversation memory.
     private let canSaveState: Bool
+    /// The template steers how long the model thinks (`reasoning_effort`, `reasoning_strength`),
+    /// so OMNIA doesn't budget its `<think>` block.
+    private let takesEffortLevel: Bool
     /// Where the layers are when the model is spread over a cluster; every step then checks that
     /// no worker dropped out.
     private let cluster: ClusterPlacement?
@@ -281,6 +284,8 @@ final class LlamaRuntime: @unchecked Sendable {
         batchCapacity = capacity
         batch = newBatch
         templateRenderer = renderer
+        takesEffortLevel = renderer != nil
+            && (template.map { $0.contains("reasoning_effort") || $0.contains("reasoning_strength") } ?? false)
         bosText = bos
         addsBOS = llama_vocab_get_add_bos(loadedVocab)
         nativeToolFormat = renderer == nil ? nil : ToolCallFormat.detect(template: template)
@@ -982,6 +987,13 @@ final class LlamaRuntime: @unchecked Sendable {
         }
         defer { llama_sampler_free(sampler) }
         var output = TokenOutput(stopMatcher: StopSequenceMatcher(stopSequences(for: request, prompt: formatted)))
+        if let budget = request.reasoningBudget, request.responseFormat == .text, !takesEffortLevel {
+            // A continued reply may have stopped inside its block; half the output stays for the answer.
+            let continued = request.assistantPrefix ?? ""
+            let open = (formatted.opensInReasoning || continued.contains("<think>")) && !continued.contains("</think>")
+            output.reasoning = ReasoningBudget(limit: min(budget, max(256, request.maxTokens / 2)),
+                                               inReasoning: open, replyStarted: !continued.isEmpty)
+        }
         let emit: (String) -> Void = { continuation.yield(.text($0)) }
         // The draft model reads text only: with images in the cache, replies are written one by one.
         let draft = request.speculative && cachedMedia.isEmpty ? self.draft : nil
@@ -1044,6 +1056,11 @@ final class LlamaRuntime: @unchecked Sendable {
         var accepted = 0
         /// Why the reply was interrupted, when it was (`stop == .interrupted`).
         var interruption: InterruptReason?
+        /// The `<think>` block's budget, when the reply has one.
+        var reasoning: ReasoningBudget?
+
+        /// The block spent its budget, and no character is half-written: OMNIA ends it now.
+        var mustEndReasoning: Bool { reasoning?.isExhausted == true && decoder.isEmpty }
 
         /// Takes one sampled token into the reply. Returns false when the reply ends with it.
         mutating func accept(_ token: llama_token, from runtime: LlamaRuntime, emit: (String) -> Void) -> Bool {
@@ -1054,6 +1071,7 @@ final class LlamaRuntime: @unchecked Sendable {
             }
             generated += 1
             let text = decoder.append(runtime.piece(for: token))
+            reasoning?.observe(text)
             guard !text.isEmpty else { return true }
             let result = stopMatcher.feed(text)
             if !result.text.isEmpty { emit(result.text) }
@@ -1063,6 +1081,13 @@ final class LlamaRuntime: @unchecked Sendable {
                 return false
             }
             return true
+        }
+
+        /// Takes the end of the block that OMNIA wrote into the cache (`ReasoningBudget.closing`).
+        mutating func endReasoning(emit: (String) -> Void) {
+            reasoning?.end()
+            let result = stopMatcher.feed(ReasoningBudget.closing)
+            if !result.text.isEmpty { emit(result.text) }
         }
 
         /// Emits the text still held back when the reply ends.
@@ -1116,8 +1141,63 @@ final class LlamaRuntime: @unchecked Sendable {
             }
             position += 1
             cachedTokens.append(token)
+            if output.mustEndReasoning,
+               try writeReasoningEnd(after: nil, output: &output, position: &position, contextLimit: contextLimit,
+                                     emit: emit) == .stop {
+                return
+            }
             pauseForPacing()
         }
+    }
+
+    private enum ReasoningEnd {
+        /// The end of the block is in the cache and the reply; sampling goes on from it.
+        case written
+        /// Not enough context left to answer anyway: nothing was written, the model goes on as it was.
+        case skipped
+        /// The reply has to stop (`output.stop` says why).
+        case stop
+    }
+
+    /// Ends a `<think>` block that spent its budget: `ReasoningBudget.closing` goes into the cache
+    /// (after `pending`, a token already emitted but not cached yet) and into the reply, and the
+    /// model goes on from it to its answer.
+    private func writeReasoningEnd(after pending: llama_token?, output: inout TokenOutput, position: inout Int,
+                                   contextLimit: Int, emit: (String) -> Void) throws -> ReasoningEnd {
+        let closing = try tokenize(ReasoningBudget.closing, addSpecial: false, parseSpecial: true)
+        let tokens = (pending.map { [$0] } ?? []) + closing
+        guard !closing.isEmpty, cachedTokens.count + tokens.count < contextLimit else {
+            output.reasoning?.end()
+            return .skipped
+        }
+        var index = 0
+        while index < tokens.count {
+            let end = min(index + batchCapacity, tokens.count)
+            batch.n_tokens = 0
+            for cell in index..<end {
+                LlamaRuntime.add(&batch, token: tokens[cell], position: position + (cell - index),
+                                 logits: cell == tokens.count - 1)
+            }
+            let status = try decode(batch)
+            if status == 1 {
+                output.stop = .contextFull
+                return .stop
+            }
+            if status != 0 {
+                clearMemory()
+                if let reason = currentInterrupt {
+                    output.stop = .interrupted
+                    output.interruption = reason
+                    return .stop
+                }
+                throw decodeFailure(status)
+            }
+            position += end - index
+            cachedTokens.append(contentsOf: tokens[index..<end])
+            index = end
+        }
+        output.endReasoning(emit: emit)
+        return .written
     }
 
     /// Speculative decoding: the draft proposes tokens, this model checks all of them in one batch,
@@ -1142,6 +1222,20 @@ final class LlamaRuntime: @unchecked Sendable {
             guard position < contextLimit else {
                 output.stop = .contextFull
                 return
+            }
+            if output.mustEndReasoning {
+                // `next` goes into the cache with the end of the block; the draft catches up when it syncs.
+                switch try writeReasoningEnd(after: next, output: &output, position: &position,
+                                             contextLimit: contextLimit, emit: emit) {
+                case .stop:
+                    return
+                case .written:
+                    next = llama_sampler_sample(sampler, context, -1)
+                    guard output.accept(next, from: self, emit: emit) else { return }
+                    continue
+                case .skipped:
+                    break
+                }
             }
             let count = min(draft.length, contextLimit - position - 1, maxTokens - output.generated, batchCapacity - 1)
             var proposal: [llama_token] = []

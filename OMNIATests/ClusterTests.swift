@@ -116,6 +116,31 @@ struct ClusterPlannerTests {
         }
     }
 
+    /// The catalog's largest model needs the PCs: with them it fits the 12 GB iPad's cluster.
+    @Test func qwen35OneTwentyTwoBNeedsTheGraphicsCards() throws {
+        let model = try #require(ModelCatalog.curated.first { $0.id == "qwen3.5-122b-a10b" })
+        let smallest = try #require(model.variants.min { $0.sizeBytes < $1.sizeBytes })
+        #expect(smallest.quant == "UD-IQ2_XXS")
+        let host = device("iPad Pro (M5) 12 GB", gigabytes: 7.64, bandwidth: 153, address: nil)
+        let apple = [device("iPhone 18 Pro A", gigabytes: 5.8, bandwidth: 115, latency: 6, address: 4),
+                     device("iPhone 18 Pro B", gigabytes: 5.8, bandwidth: 115, latency: 6, address: 5),
+                     device("iPhone 12 Pro Max", gigabytes: 2.4, bandwidth: 34, latency: 8, address: 9)]
+        let cards = [device("RTX 4060 Ti", gigabytes: 14.2, bandwidth: 288, latency: 3, address: 2),
+                     device("RTX 3060", gigabytes: 10.25, bandwidth: 360, latency: 3, address: 3)]
+        func plan(_ workers: [ClusterDevice]) -> ClusterPlan? {
+            ClusterPlanner.plan(model.facts, fileSize: UInt64(smallest.sizeBytes), requestedContext: 32_768,
+                                kvTypes: [.f16, .q8_0, .q4_0], microBatch: 512, flashAttention: true,
+                                host: host, workers: workers, spread: .fastest)
+        }
+        #expect(plan(apple) == nil)
+        let result = try #require(plan(apple + cards))
+        #expect(result.shares.reduce(0) { $0 + $1.layers } == 48)
+        #expect(Set(cards.map(\.id)).isSubset(of: Set(result.workers.map(\.device.id))))
+        for share in result.shares {
+            #expect(share.bytes <= share.device.memoryBudget)
+        }
+    }
+
     @Test func aModelThatFitsOnTheHostStaysThere() throws {
         // 4 GB fits on the host alone: no worker is worth a network hop for it.
         let result = try #require(plan(gigabytes: 4, workers: phones))

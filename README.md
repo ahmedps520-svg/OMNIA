@@ -116,7 +116,9 @@ scripts/          Archive, icon rendering, catalog regeneration
 
 **Chat templates.** Newer models (Gemma 4, the Qwen3.5 family, gpt-oss, Granite 4.2, LFM3) need their exact Jinja templates. OMNIA renders the template stored in the GGUF with swift-jinja, as `llama-server --jinja` does, falling back to llama.cpp's built-in templates and then ChatML. Reasoning switches (`enable_thinking`, `reasoning_effort`, `reasoning_strength`) are exposed per conversation and per model, and reasoning is shown in a collapsible section for `<think>`, Gemma 4 thought channels, gpt-oss Harmony channels and Muse Glimmer messages.
 
-**Reasoning effort and reply length.** Settings › Inference sets how long reasoning models think: Light, Balanced (the default) or Thorough. Every template that takes a level gets it, so Qwen3.8 doesn't fall back to its own default, "xhigh", which second-guesses settled points at length. Replies may run to 8,192 tokens, room to reason and then answer; the 2,048-token limit saved by builds 01–04 is raised once on update, and a limit chosen after that stays.
+**Reasoning effort and reply length.** Settings › Inference sets how long reasoning models think: Light, Balanced (the default) or Thorough. Every template that takes a level gets it, so Qwen3.8 doesn't fall back to its own default, "xhigh", which second-guesses settled points at length. Templates that only switch thinking on or off (Qwen3.5 and 3.6, Ornith) get a token budget instead (`ReasoningBudget`): after 1,024 tokens of `<think>` on Light or 4,096 on Balanced (at most half the reply), OMNIA writes the sentence Qwen's own guide uses to cap thinking and closes the block, and the model answers. Thorough has no budget. Replies may run to 8,192 tokens, room to reason and then answer; the 2,048-token limit saved by builds 01–04 is raised once on update, and a limit chosen after that stays.
+
+**Tool calls as they're written.** A call's markup is hidden from the reply, so a long one (code for `run_code`, say) used to look like a reply that had stopped. The tool and the call's latest lines now show while the model writes it, and a streaming reply shows its token count and speed (also in the iPad's background progress).
 
 **Cluster.** A model too big for one device runs across several on the same Wi-Fi: up to 20 can join, and one model spreads over up to 16 of them (llama.cpp's limit). The device you chat on hosts (Cluster in the sidebar). Other iPhones and iPads join by scanning its QR code, with the Camera or in OMNIA. Devices OMNIA isn't tuned for, such as an iPhone 12 Pro Max or an iPad Air, open straight to lending. A Windows PC joins from a page the host serves: one PowerShell command starts OMNIA Node (`OMNIA/Resources/Cluster/omnia-node.ps1`). It downloads llama.cpp b11960's official `ggml-rpc-server` (CUDA for NVIDIA, Vulkan or CPU otherwise), verifies its SHA-256, and puts an access-controlled relay in front of it. Each new PC needs one tap of approval on the host. How it runs:
 - **Engine.** It is llama.cpp's RPC backend, built into OMNIA's own build of llama.cpp (`scripts/build-llama-xcframework.sh`). Each device holds whole layers and its share of the KV cache. The host keeps the embeddings and the output layer, so the vocabulary-sized logits never cross the network. The host reads the workers' layers from the model file to send them; OMNIA's patch to llama.cpp then releases those pages, which upstream keeps in the host's memory for as long as the model is loaded. The host also keeps 512 MB of its budget free for that load.
@@ -149,7 +151,7 @@ After loading, OMNIA re-measures. If iOS reports too little headroom left, it un
 
 ## Model catalog
 
-`OMNIA/Core/Models/CatalogData.swift` lists 19 models (94 GGUF files) verified on 2026-11-02, plus Qwen3.8 27B's four larger files for clusters (UD-Q4_K_M to Q8_0) on 2026-11-05:
+`OMNIA/Core/Models/CatalogData.swift` lists 19 models (94 GGUF files) verified on 2026-11-02, and files for clusters verified on 2026-11-05: Qwen3.8 27B UD-Q4_K_M to Q8_0, Qwen3.6 35B-A3B UD-Q3_K_M to Q8_0 (16.6–36.9 GB), Ornith 1.5 35B-A3B IQ3_XXS to Q8_0 (15.3–37.8 GB), and a 20th model, Qwen3.5 122B-A10B (UD-IQ2_XXS 36.6 GB, UD-IQ2_M 39.1 GB, UD-Q2_K_XL 41.8 GB), which needs GPU PCs in the cluster. Unsloth's larger 122B quants come in several files, which OMNIA doesn't download yet. While a cluster is hosted, Models lists what it can run under **Runs on your cluster**.
 
 - Every repository is public (`gated: false`).
 - Sizes and SHA-256 hashes come from the Hugging Face API, and every file answered a `HEAD` request without login.
@@ -157,12 +159,13 @@ After loading, OMNIA re-measures. If iOS reports too little headroom left, it un
 
 | Tier | Models |
 |---|---|
+| 122B (clusters with GPU PCs) | Qwen3.5 122B-A10B |
 | 20–35B (16 GB iPad, 2–3-bit) | Qwen3.8 27B · Ornith 1.5 35B-A3B · Qwen3.6 35B-A3B · Gemma 4 26B-A4B · gpt-oss-20b · Muse Glimmer 30B · LFM2.5 24B-A2B |
 | 12–15B | Gemma 4 12B · Ministral 3 14B |
 | 7–9B | Ornith 1.5 9B · MiMo-V2.6 Distill 9B · Qwen3.5 9B · Granite 4.2 8B |
 | 1–4B | Qwen3.5 4B · Nemotron 3.5 Bolt E4B · Gemma 4 E4B · Granite 4.2 3B · LFM3 1.7B · Gemma 4 E2B |
 
-14 of the models can see images: their image encoders (one per model, 120 MB–1.4 GB) were verified the same way on 2026-11-03 and are offered on each installed model's page. Imported models can be given an encoder file from Files.
+15 of the models can see images: their image encoders (one per model, 120 MB–1.4 GB) were verified the same way on 2026-11-03 (Qwen3.5 122B-A10B's on 2026-11-05) and are offered on each installed model's page. Imported models can be given an encoder file from Files.
 
 Quality scores are curated from vendor-reported benchmarks. You can also search any public GGUF repository on Hugging Face from the Models tab — OMNIA reads the remote header to check the fit before you download — or import `.gguf` files from the Files app. Files copied to *On My iPad › OMNIA* import without a network.
 
